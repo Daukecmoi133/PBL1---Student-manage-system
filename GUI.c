@@ -27,8 +27,7 @@ typedef struct {
     GtkWidget *deleteListBox;
     GtkWidget *deleteMsg;
     int selectedDeleteIndex;
-    GtkWidget *deleteNameEntry;
-    GtkWidget *deleteMSSVEntry;
+    GtkWidget *deleteEntry;
     GtkWidget *deleteSearchListBox;
     GtkWidget *deleteSearchMsg;
     
@@ -47,6 +46,8 @@ typedef struct {
     GtkWidget *fileEntry;
     GtkWidget *oldFileLabel;
     GtkWidget *fileMsgLabel; // Label riêng để hiện thông báo cho đẽp
+
+    GtkWidget * previewText;
 } SinhvienWidgets;
 
 typedef struct {
@@ -65,11 +66,9 @@ static void show_export_file_dialog(SinhvienWidgets *app);
 
 typedef struct {
     SinhvienWidgets *app;
+    GtkWidget *entry_file;
     GtkWidget *window;
-    GtkWidget *entry;
-    GtkWidget *error_label;
-    gboolean exported;
-} ExportDialogData;
+} ExportPreviewData;
 
 typedef struct {
     SinhvienWidgets *app;
@@ -83,8 +82,6 @@ typedef struct {
     GtkWidget *window;
 } EditDialogData;
 
-static void on_export_dialog_reject(GtkWidget *widget, gpointer user_data);
-static void on_export_dialog_accept(GtkWidget *widget, gpointer user_data);
 static void on_edit_clicked(GtkWidget *widget, gpointer data);
 static void on_edit_save(GtkWidget *widget, gpointer user_data);
 static void on_reset_delete_view(GtkWidget *widget, gpointer data);
@@ -125,96 +122,6 @@ static void trim_whitespace(char *dest, const char *src) {
     dest[len] = '\0';
 }
 
-static void on_export_dialog_reject(GtkWidget *widget, gpointer user_data) {
-    ExportDialogData *data = user_data;
-    if (data->window) {
-        gtk_window_destroy(GTK_WINDOW(data->window));
-    }
-    g_free(data);
-}
-
-static void on_export_dialog_accept(GtkWidget *widget, gpointer user_data) {
-    ExportDialogData *data = user_data;
-    const char *filename = gtk_editable_get_text(GTK_EDITABLE(data->entry));
-    if (!is_valid_export_filename(filename)) {
-        gtk_label_set_markup(GTK_LABEL(data->error_label), "<span foreground='red'>Tên file không hợp lệ. Vui lòng nhập tên file hợp lệ và kết thúc bằng .txt.</span>");
-        return;
-    }
-
-    const char *filter = gtk_editable_get_text(GTK_EDITABLE(data->app->listFilterEntry));
-    if (!export_student_list_to_file(filename, filter, ArrSinhVien, slsv)) {
-        gtk_label_set_markup(GTK_LABEL(data->error_label), "<span foreground='red'>Không thể ghi file hoặc không có sinh viên phù hợp.</span>");
-
-        GtkAlertDialog *failure = gtk_alert_dialog_new("Xuất file thất bại");
-        char *fail_detail = g_strdup_printf("Không thể xuất file '%s'. Vui lòng kiểm tra lại tên file và quyền ghi.", filename);
-        gtk_alert_dialog_set_detail(failure, fail_detail);
-        gtk_alert_dialog_set_buttons(failure, (const char *[]){"OK", NULL});
-        gtk_alert_dialog_show(failure, GTK_WINDOW(gtk_widget_get_root(data->window)));
-        g_free(fail_detail);
-        return;
-    }
-
-    // Đóng dialog nhập tên file trước
-    gtk_window_destroy(GTK_WINDOW(data->window));
-
-    // Sau đó hiển thị thông báo thành công
-    char success_detail[256];
-    g_snprintf(success_detail, sizeof(success_detail), "✅ Danh sách sinh viên đã được xuất vào file '%s'.", filename);
-    GtkAlertDialog *success = gtk_alert_dialog_new("Xuất file thành công");
-    gtk_alert_dialog_set_detail(success, success_detail);
-    gtk_alert_dialog_set_buttons(success, (const char *[]){"OK", NULL});
-    gtk_alert_dialog_show(success, NULL);
-
-    g_free(data);
-}
-
-static void show_export_file_dialog(SinhvienWidgets *app) {
-    ExportDialogData *data = g_new0(ExportDialogData, 1);
-    data->app = app;
-    data->exported = FALSE;
-
-    GtkWidget *dialog = gtk_window_new();
-    data->window = dialog;
-    gtk_window_set_title(GTK_WINDOW(dialog), "Xuất file danh sách");
-    gtk_window_set_modal(GTK_WINDOW(dialog), TRUE);
-    gtk_window_set_transient_for(GTK_WINDOW(dialog), GTK_WINDOW(gtk_widget_get_root(app->stack)));
-    gtk_window_set_default_size(GTK_WINDOW(dialog), 420, 180);
-
-    GtkWidget *content = gtk_box_new(GTK_ORIENTATION_VERTICAL, 12);
-    gtk_widget_set_margin_top(content, 12);
-    gtk_widget_set_margin_bottom(content, 12);
-    gtk_widget_set_margin_start(content, 12);
-    gtk_widget_set_margin_end(content, 12);
-    gtk_window_set_child(GTK_WINDOW(dialog), content);
-
-    GtkWidget *label = gtk_label_new("Nhập tên file .txt (ví dụ: filename.txt):");
-    gtk_widget_set_halign(label, GTK_ALIGN_START);
-    gtk_box_append(GTK_BOX(content), label);
-
-    data->entry = gtk_entry_new();
-    gtk_entry_set_placeholder_text(GTK_ENTRY(data->entry), "ví dụ: sinhvien.txt");
-    gtk_widget_set_margin_top(data->entry, 8);
-    gtk_box_append(GTK_BOX(content), data->entry);
-
-    data->error_label = gtk_label_new("");
-    gtk_widget_set_margin_top(data->error_label, 8);
-    gtk_box_append(GTK_BOX(content), data->error_label);
-
-    GtkWidget *button_box = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 8);
-    gtk_widget_set_margin_top(button_box, 12);
-    gtk_widget_set_halign(button_box, GTK_ALIGN_END);
-
-    GtkWidget *cancel_btn = gtk_button_new_with_label("Hủy");
-    GtkWidget *save_btn = gtk_button_new_with_label("Lưu");
-    g_signal_connect(cancel_btn, "clicked", G_CALLBACK(on_export_dialog_reject), data);
-    g_signal_connect(save_btn, "clicked", G_CALLBACK(on_export_dialog_accept), data);
-    gtk_box_append(GTK_BOX(button_box), cancel_btn);
-    gtk_box_append(GTK_BOX(button_box), save_btn);
-    gtk_box_append(GTK_BOX(content), button_box);
-
-    gtk_window_present(GTK_WINDOW(dialog));
-}
-
 /// ======= HÀM HỖ TRỢ TẠO KHUNG ========
 void set_margin_all(GtkWidget *GW, int n){
     if (GW == NULL) return ;
@@ -229,8 +136,200 @@ static GtkWidget *create_student_card_box(int spacing) {
     GtkWidget *row = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, spacing);
     set_margin_all(row, 10);
     gtk_widget_add_css_class(row, "student-card");
-    gtk_widget_set_hexpand(row, TRUE);
+    gtk_widget_set_size_request(row, 320, 110);
     return row;
+}
+
+static void append_repeat(GString *s, const char *ch, int n) {
+    for(int i = 0; i < n; i++)
+        g_string_append(s, ch);
+}
+
+static GString *build_student_table(const char *filter) {
+    GString *content = g_string_new("");
+
+    int wSTT = 3;
+    int wMSSV = 10;
+    int wName = g_utf8_strlen("HỌ TÊN", -1) + 2;
+    int wClass = g_utf8_strlen("LỚP", -1) + 2;
+    int wDate = 10;
+    int wGender = g_utf8_strlen("GIỚI TÍNH", -1);
+    int wEmail = g_utf8_strlen("EMAIL", -1);
+    int wAddress = g_utf8_strlen("ĐỊA CHỈ", -1);
+
+    int count = 0;
+
+    for(int i = 0; i < slsv; i++) {
+
+        if(strlen(filter) > 0 &&
+           strcmp(ArrSinhVien[i].Class, filter) != 0)
+            continue;
+
+        count++;
+
+        int len;
+
+        len = g_utf8_strlen(ArrSinhVien[i].Name, -1);
+        if(len > wName) wName = len;
+
+        len = g_utf8_strlen(ArrSinhVien[i].Class, -1);
+        if(len > wClass) wClass = len;
+
+        len = g_utf8_strlen(ArrSinhVien[i].Gender, -1);
+        if(len > wGender) wGender = len;
+
+        len = g_utf8_strlen(ArrSinhVien[i].Email, -1);
+        if(len > wEmail) wEmail = len;
+
+        len = g_utf8_strlen(ArrSinhVien[i].Address, -1);
+        if(len > wAddress) wAddress = len;
+    }
+
+    if(count == 0) {
+        g_string_append(content,
+            "Không có sinh viên phù hợp.\n");
+        return content;
+    }
+
+    // ===== Đỉnh bảng =====
+
+    g_string_append(content, "╔");
+
+    append_repeat(content, "═", wSTT + 2);
+    g_string_append(content, "╦");
+
+    append_repeat(content, "═", wMSSV + 2);
+    g_string_append(content, "╦");
+
+    append_repeat(content, "═", wName + 2);
+    g_string_append(content, "╦");
+
+    append_repeat(content, "═", wClass + 2);
+    g_string_append(content, "╦");
+
+    append_repeat(content, "═", wGender + 2);
+    g_string_append(content, "╦");
+
+    append_repeat(content, "═", wDate + 2);
+    g_string_append(content, "╦");
+
+    append_repeat(content, "═", wEmail + 2);
+    g_string_append(content, "╦");
+
+    append_repeat(content, "═", wAddress + 2);
+
+    g_string_append(content, "╗\n");
+
+    // ===== Header =====
+
+    g_string_append_printf(
+        content,
+        "║ %-*s ║ %-*s ║ %-*s ║ %-*s ║ %-*s ║ %-*s ║ %-*s ║ %-*s ║\n",
+
+        wSTT, "STT",
+        wMSSV, "MSSV",
+        wName, "HỌ TÊN",
+        wClass, "LỚP",
+        wGender, "GIỚI TÍNH",
+        wDate, "NGÀY SINH",
+        wEmail, "EMAIL",
+        wAddress, "ĐỊA CHỈ"
+    );
+
+    // ===== Dòng phân cách =====
+
+    g_string_append(content, "╠");
+
+    append_repeat(content, "═", wSTT + 2);
+    g_string_append(content, "╬");
+
+    append_repeat(content, "═", wMSSV + 2);
+    g_string_append(content, "╬");
+
+    append_repeat(content, "═", wName + 2);
+    g_string_append(content, "╬");
+
+    append_repeat(content, "═", wClass + 2);
+    g_string_append(content, "╬");
+
+    append_repeat(content, "═", wGender + 2);
+    g_string_append(content, "╬");
+
+    append_repeat(content, "═", wDate + 2);
+    g_string_append(content, "╬");
+
+    append_repeat(content, "═", wEmail + 2);
+    g_string_append(content, "╬");
+
+    append_repeat(content, "═", wAddress + 2);
+
+    g_string_append(content, "╣\n");
+
+    // ===== Dữ liệu =====
+
+    int stt = 1;
+
+    for(int i = 0; i < slsv; i++) {
+
+        if(strlen(filter) > 0 &&
+           strcmp(ArrSinhVien[i].Class, filter) != 0)
+            continue;
+
+        char date_buf[20];
+
+        sprintf(
+            date_buf,
+            "%02d/%02d/%04d",
+            ArrSinhVien[i].NgaySinh.day,
+            ArrSinhVien[i].NgaySinh.month,
+            ArrSinhVien[i].NgaySinh.year
+        );
+
+        g_string_append_printf(
+            content,
+            "║ %-*d ║ %-*lld ║ %-*s ║ %-*s ║ %-*s ║ %-*s ║ %-*s ║ %-*s ║\n",
+
+            wSTT, stt++,
+            wMSSV, ArrSinhVien[i].MaSV,
+            wName, ArrSinhVien[i].Name,
+            wClass, ArrSinhVien[i].Class,
+            wGender, ArrSinhVien[i].Gender,
+            wDate, date_buf,
+            wEmail, ArrSinhVien[i].Email,
+            wAddress, ArrSinhVien[i].Address
+        );
+    }
+
+    // ===== Đáy bảng =====
+
+    g_string_append(content, "╚");
+
+    append_repeat(content, "═", wSTT + 2);
+    g_string_append(content, "╩");
+
+    append_repeat(content, "═", wMSSV + 2);
+    g_string_append(content, "╩");
+
+    append_repeat(content, "═", wName + 2);
+    g_string_append(content, "╩");
+
+    append_repeat(content, "═", wClass + 2);
+    g_string_append(content, "╩");
+
+    append_repeat(content, "═", wGender + 2);
+    g_string_append(content, "╩");
+
+    append_repeat(content, "═", wDate + 2);
+    g_string_append(content, "╩");
+
+    append_repeat(content, "═", wEmail + 2);
+    g_string_append(content, "╩");
+
+    append_repeat(content, "═", wAddress + 2);
+
+    g_string_append(content, "╝\n");
+
+    return content;
 }
 
 /// ======= BUTTON QUAY LẠI =======
@@ -243,7 +342,12 @@ void on_back_clicked(GtkWidget *widget, gpointer data) {
 
 void on_go_file_select(GtkWidget *widget, gpointer data) {
     SinhvienWidgets *app = (SinhvienWidgets *)data;
+
+    load_last_filename();
     LuuVaoFile(ArrSinhVien, slsv);
+    g_autofree char *current_text = g_strdup_printf("<span size='x-large'>File hiện tại: <b>%s</b></span>", CurrentFileName);
+    gtk_label_set_markup(GTK_LABEL(app->oldFileLabel), current_text);
+
     gtk_stack_set_visible_child_name(GTK_STACK(app->stack), "file_select");
 }
 
@@ -319,19 +423,14 @@ void on_use_new_file(GtkWidget *widget, gpointer data) {
 }
 
 GtkWidget* create_file_selection_ui(SinhvienWidgets *w) {
+
     GtkWidget *vbox = gtk_box_new(GTK_ORIENTATION_VERTICAL, 15);
     set_margin_all(vbox, 40);
-
-    // Header
-    GtkWidget *header = gtk_label_new(NULL);
-    gtk_label_set_markup(GTK_LABEL(header), "<span size='xx-large' weight='bold'>CHỌN FILE DỮ LIỆU</span>");
-    gtk_widget_set_margin_bottom(header, 30);
-    gtk_box_append(GTK_BOX(vbox), header);
 
     /// Author info
     GtkWidget *author = gtk_label_new(NULL);
     gtk_label_set_markup(GTK_LABEL(author),
-        "<span size='medium' foreground='#ffffff' weight='bold' style='italic'>"
+        "<span size='xx-large' foreground='#ffffff' weight='bold' style='italic'>"
         "Thực hiện bởi: Trần Khánh Duy &amp; Lã Trung Thực"
         "</span>");
     gtk_label_set_xalign(GTK_LABEL(author), 0.5);
@@ -339,11 +438,17 @@ GtkWidget* create_file_selection_ui(SinhvienWidgets *w) {
 
     gtk_box_append(GTK_BOX(vbox), author);
 
+    // Header
+    GtkWidget *header = gtk_label_new(NULL);
+    gtk_label_set_markup(GTK_LABEL(header), "<span size='xx-large' weight='bold'>CHỌN FILE DỮ LIỆU</span>");
+    gtk_widget_set_margin_bottom(header, 30);
+    gtk_box_append(GTK_BOX(vbox), header);
+
     // Current file info
     GtkWidget *current_box = gtk_box_new(GTK_ORIENTATION_VERTICAL, 5);
     gtk_widget_set_margin_bottom(current_box, 20);
     w->oldFileLabel = gtk_label_new(NULL);
-    char *current_text = g_strdup_printf("<span size='large'>File hiện tại: <b>%s</b></span>", CurrentFileName);
+    char *current_text = g_strdup_printf("<span size='x-large'>File hiện tại: <b>%s</b></span>", CurrentFileName);
     gtk_label_set_markup(GTK_LABEL(w->oldFileLabel), current_text);
     g_free(current_text);
     gtk_box_append(GTK_BOX(current_box), w->oldFileLabel);
@@ -353,7 +458,7 @@ GtkWidget* create_file_selection_ui(SinhvienWidgets *w) {
     GtkWidget *new_box = gtk_box_new(GTK_ORIENTATION_VERTICAL, 10);
     gtk_widget_set_halign(new_box, GTK_ALIGN_CENTER);
     GtkWidget *new_label = gtk_label_new(NULL);
-    gtk_label_set_markup(GTK_LABEL(new_label), "<span size='medium'>Hoặc nhập tên file mới:</span>");
+    gtk_label_set_markup(GTK_LABEL(new_label), "<span size='x-large'>Hoặc nhập tên file mới:</span>");
     gtk_box_append(GTK_BOX(new_box), new_label);
 
     w->fileEntry = gtk_entry_new();
@@ -362,6 +467,8 @@ GtkWidget* create_file_selection_ui(SinhvienWidgets *w) {
     gtk_box_append(GTK_BOX(new_box), w->fileEntry);
 
     GtkWidget *btn_new = gtk_button_new_with_label("SỬ DỤNG FILE MỚI");
+    gtk_widget_add_css_class(btn_new, "label-btn");
+    gtk_widget_add_css_class(btn_new, "border-label");
     gtk_widget_set_size_request(btn_new, -1, 50);
     g_signal_connect(btn_new, "clicked", G_CALLBACK(on_use_new_file), w);
     gtk_box_append(GTK_BOX(new_box), btn_new);
@@ -375,7 +482,9 @@ GtkWidget* create_file_selection_ui(SinhvienWidgets *w) {
     gtk_box_append(GTK_BOX(vbox), sep);
 
     // Use old file button
-    GtkWidget *btn_old = gtk_button_new_with_label("TIẾP TỤC VỚI FILE CŨ");
+    GtkWidget *btn_old = gtk_button_new_with_label("TIẾP TỤC VỚI FILE HIỆN TẠI");
+    gtk_widget_add_css_class(btn_old, "label-btn");
+    gtk_widget_add_css_class(btn_old, "border-label");
     gtk_widget_set_size_request(btn_old, 400, 50);
     gtk_widget_set_halign(btn_old, GTK_ALIGN_CENTER);
     g_signal_connect(btn_old, "clicked", G_CALLBACK(on_use_old_file), w);
@@ -529,7 +638,8 @@ GtkWidget* create_gender_dropdown_row(const char *label_text, GtkWidget **dropdo
     gtk_widget_set_margin_bottom(vbox, 12);
 
     GtkWidget *lbl = gtk_label_new(NULL);
-    char* markup = g_strdup_printf("<span size='small' weight='bold' color='#333333'>%s</span> <span foreground='red'>*</span>", label_text);    gtk_label_set_markup(GTK_LABEL(lbl), markup);
+    char* markup = g_strdup_printf("<span size='medium' font_desc='Sans 14' weight='bold' color='#333333'>%s</span> <span font_desc='Sans 14' foreground='red'>*</span>", label_text);    
+    gtk_label_set_markup(GTK_LABEL(lbl), markup);
     gtk_label_set_xalign(GTK_LABEL(lbl), 0);
     g_free(markup);
 
@@ -550,9 +660,9 @@ GtkWidget* create_input_row_ui_add(const char *label_text, GtkWidget **out_entry
     char *markup;
     
     if (is_required) {
-        markup = g_strdup_printf("<b>%s</b> <span foreground='red'>*</span>", label_text);
+        markup = g_strdup_printf("<span size = 'medium' font_desc='Sans 14'><b>%s</b> <span foreground='red'>*</span></span>",label_text);
     } else {
-        markup = g_strdup_printf("<b>%s</b>", label_text);
+        markup = g_strdup_printf("<span size = 'medium' font_desc='Sans 14'><b>%s</b></span>",label_text);
     }
     
     gtk_label_set_markup(GTK_LABEL(label), markup);
@@ -588,7 +698,7 @@ GtkWidget* create_add_sv_ui(SinhvienWidgets *widgets) {
     gtk_box_append(GTK_BOX(main_vbox), icon_header_box);
 
     GtkWidget *instr = gtk_label_new(NULL);
-    gtk_label_set_markup(GTK_LABEL(instr), "<span size='small' weight='bold' color='#ea0606'> *: KHÔNG ĐƯỢC ĐỂ TRỐNG\n</span>");
+    gtk_label_set_markup(GTK_LABEL(instr), "<span size='x-large' weight='bold' color='#ff0000'> (*) KHÔNG ĐƯỢC ĐỂ TRỐNG CÁC THÔNG TIN BẮT BUỘC\n</span>");
     gtk_label_set_xalign(GTK_LABEL(instr), 0.5);
     gtk_box_append(GTK_BOX(main_vbox), instr);
 
@@ -616,12 +726,16 @@ GtkWidget* create_add_sv_ui(SinhvienWidgets *widgets) {
 
     // Nút Add
     GtkWidget *btn_add = gtk_button_new_with_label("THÊM VÀO HỆ THỐNG");
+    gtk_widget_add_css_class(btn_add, "label-btn");
+    gtk_widget_add_css_class(btn_add, "border-label");
     gtk_widget_set_size_request(btn_add, -1, 50);
     g_signal_connect(btn_add, "clicked", G_CALLBACK(on_add_clicked), widgets);
     gtk_box_append(GTK_BOX(form_box), btn_add);
 
     // Nút Back
-    GtkWidget *btn_back = gtk_button_new_with_label("Quay lại Menu");
+    GtkWidget *btn_back = gtk_button_new_with_label("◀ Quay lại Menu");
+    gtk_widget_add_css_class(btn_back, "label-btn");
+    gtk_widget_add_css_class(btn_back, "border-label");
     gtk_button_set_has_frame(GTK_BUTTON(btn_back), FALSE);
     gtk_widget_set_margin_top(btn_back, 10);
     g_signal_connect(btn_back, "clicked", G_CALLBACK(on_back_clicked), widgets);
@@ -632,6 +746,52 @@ GtkWidget* create_add_sv_ui(SinhvienWidgets *widgets) {
 }
 
 /// ======= GIAO DIỆN DANH SÁCH SINH VIÊN =======
+/// Preview trước khi xuất file
+GtkWidget* create_preview_ui(SinhvienWidgets *app) {
+    GtkWidget *vbox = gtk_box_new(GTK_ORIENTATION_VERTICAL, 12);
+    set_margin_all(vbox, 20);
+
+    GtkWidget *title = gtk_label_new(NULL);
+    gtk_label_set_markup(GTK_LABEL(title), "<span size='xx-large' weight='bold'>XEM TRƯỚC DANH SÁCH SINH VIÊN</span>");
+    gtk_widget_set_margin_bottom(title, 20);
+    gtk_box_append(GTK_BOX(vbox), title);
+
+    GtkWidget *scroll = gtk_scrolled_window_new();
+    gtk_widget_set_vexpand(scroll, TRUE);
+    gtk_widget_set_hexpand(scroll, TRUE); // Cho phép vùng cuộn giãn hết chiều ngang
+
+    app->previewText = gtk_text_view_new();
+    gtk_text_view_set_editable(GTK_TEXT_VIEW(app->previewText), FALSE); 
+    gtk_text_view_set_cursor_visible(GTK_TEXT_VIEW(app->previewText), FALSE); 
+    gtk_text_view_set_wrap_mode(GTK_TEXT_VIEW(app->previewText), GTK_WRAP_WORD_CHAR); 
+
+    gtk_text_view_set_left_margin(GTK_TEXT_VIEW(app->previewText), 10);
+    gtk_text_view_set_right_margin(GTK_TEXT_VIEW(app->previewText), 10);
+    gtk_text_view_set_top_margin(GTK_TEXT_VIEW(app->previewText), 10);
+    gtk_text_view_set_bottom_margin(GTK_TEXT_VIEW(app->previewText), 10);
+
+    gtk_scrolled_window_set_child(GTK_SCROLLED_WINDOW(scroll), app->previewText);
+    gtk_box_append(GTK_BOX(vbox), scroll);
+
+    GtkWidget *btn_box = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 10);
+    gtk_widget_set_margin_top(btn_box, 10);
+
+    GtkWidget *btn_back = gtk_button_new_with_label("◀ Quay lại Menu");
+    gtk_widget_add_css_class(btn_back, "label-btn");
+    gtk_widget_add_css_class(btn_back, "border-label");
+    gtk_widget_add_css_class(btn_back, "back-button");
+
+    GtkWidget *btn_export = gtk_button_new_with_label("Xuất file");
+    gtk_widget_add_css_class(btn_export, "label-btn");
+    gtk_widget_add_css_class(btn_export, "border-label");
+
+    gtk_box_append(GTK_BOX(btn_box), btn_back);
+    gtk_box_append(GTK_BOX(btn_box), btn_export);
+
+    gtk_box_append(GTK_BOX(vbox), btn_box);
+    return vbox;
+}
+/// Giao diện danh sách sinh viên
 void refresh_student_list(SinhvienWidgets *app, const char *className) {
     GtkWidget *child = gtk_widget_get_first_child(app->list_box);
     while (child) {
@@ -664,7 +824,7 @@ void refresh_student_list(SinhvienWidgets *app, const char *className) {
         GtkWidget *lbl = gtk_label_new(NULL);
         gtk_label_set_wrap(GTK_LABEL(lbl), TRUE);
         gtk_label_set_max_width_chars(GTK_LABEL(lbl), 24);
-        char *txt = g_strdup_printf("<b>%s</b>\n<span size='small' color='#666666'>MSSV: %lld | Lớp: %s | Năm sinh: %d\nGiới tính: %s | Địa chỉ: %s\nEmail: %s</span>", 
+        char *txt = g_strdup_printf("<b>%s</b>\n<span size='medium' color='#666666'>MSSV: %lld | Lớp: %s | Năm sinh: %d\nGiới tính: %s | Địa chỉ: %s\nEmail: %s</span>", 
                                     ArrSinhVien[i].Name, ArrSinhVien[i].MaSV, ArrSinhVien[i].Class, ArrSinhVien[i].NgaySinh.year,
                                     ArrSinhVien[i].Gender, ArrSinhVien[i].Address, ArrSinhVien[i].Email);
         gtk_label_set_markup(GTK_LABEL(lbl), txt);
@@ -675,15 +835,35 @@ void refresh_student_list(SinhvienWidgets *app, const char *className) {
         gtk_box_append(GTK_BOX(row), lbl);
         gtk_box_append(GTK_BOX(card), row);
         gtk_flow_box_insert(GTK_FLOW_BOX(app->list_box), card, -1);
+
+        GtkWidget *flow_child = gtk_widget_get_parent(card);
+        if (flow_child) {
+            gtk_widget_set_halign(flow_child, GTK_ALIGN_START);
+            gtk_widget_set_valign(flow_child, GTK_ALIGN_START);
+        }
+
         found = 1;
     }
 
     if (strlen(class_filter) > 0 && !found) {
-        GtkWidget *row = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 10);
-        set_margin_all(row, 10);
-        GtkWidget *lbl = gtk_label_new("❌ Không tìm thấy sinh viên trong lớp này!");
+        GtkWidget *row = create_student_card_box(10);
+        GtkWidget *lbl = gtk_label_new(NULL);
+        char *txt = g_strdup_printf("<span size='large' weight='bold' color='#ff0000'>Không tìm thấy sinh viên nào trong lớp <b>%s</b>!</span>", class_filter);
+        gtk_label_set_markup(GTK_LABEL(lbl), txt);  
+        gtk_label_set_xalign(GTK_LABEL(lbl), 0);
         gtk_box_append(GTK_BOX(row), lbl);
         gtk_flow_box_insert(GTK_FLOW_BOX(app->list_box), row, -1);
+        g_free(txt);
+    }
+    if (strlen(class_filter) == 0 && !found) {
+        GtkWidget *row = create_student_card_box(10);
+        GtkWidget *lbl = gtk_label_new(NULL);
+        char *txt = g_strdup_printf("<span size='large' weight='bold' color='#ff0000'>Không có sinh viên nào trong hệ thống!</span>");
+        gtk_label_set_markup(GTK_LABEL(lbl), txt);  
+        gtk_label_set_xalign(GTK_LABEL(lbl), 0);
+        gtk_box_append(GTK_BOX(row), lbl);
+        gtk_flow_box_insert(GTK_FLOW_BOX(app->list_box), row, -1);
+        g_free(txt);
     }
 }
 
@@ -713,9 +893,203 @@ void on_clear_list_filter_clicked(GtkWidget *widget, gpointer data) {
     refresh_student_list(app, NULL);
 }
 
-void on_export_list_clicked(GtkWidget *widget, gpointer data) {
-    SinhvienWidgets *app = (SinhvienWidgets *)data;
-    show_export_file_dialog(app);
+// void on_confirm_export(GtkWidget *widget, gpointer data) {
+//     export_to_data();
+// }
+// void on_export_list_clicked(GtkWidget *widget, gpointer data) {
+    
+//     SinhvienWidgets *app = data;
+
+//     char buffer[50000];
+//     buffer[0] = '\0';
+
+//     for (int i = 0; i < slsv; i++) {
+//         char temp[1000];
+//         sprintf(temp, "MSSV: %lld\n""Tên: %s\n""Lớp: %s\n\n", ArrSinhVien[i].MaSV, ArrSinhVien[i].Name, ArrSinhVien[i].Class);
+
+//         strcat(buffer, temp);
+//     }
+
+//     GtkTextBuffer *tb = gtk_text_view_get_buffer(GTK_TEXT_VIEW(app->previewText));
+//     gtk_text_buffer_set_text(tb, buffer, -1);
+
+//     gtk_stack_set_visible_chile_name(GTK_STACK(app->stack), "preview");
+// }
+
+static void on_export_list_clicked(GtkWidget *widget, gpointer data)
+{
+    ExportPreviewData *exp = data;
+
+    const char *filename = gtk_editable_get_text(GTK_EDITABLE(exp->entry_file));
+
+    if (strlen(filename) == 0) {
+        GtkAlertDialog *alert = gtk_alert_dialog_new("Thiếu tên file");
+        gtk_alert_dialog_set_detail(alert, "Vui lòng nhập tên file.");
+        gtk_alert_dialog_show(alert, GTK_WINDOW(exp->window));
+        return;
+    }
+
+    if (!is_valid_export_filename(filename)) {
+        GtkAlertDialog *alert = gtk_alert_dialog_new("Tên file không hợp lệ");
+        gtk_alert_dialog_set_detail(alert, "Tên file phải kết thúc bằng .txt");
+        gtk_alert_dialog_show(alert, GTK_WINDOW(exp->window));
+        return;
+    }
+
+    const char *filter = gtk_editable_get_text(GTK_EDITABLE(exp->app->listFilterEntry));
+
+    if (!export_student_list_to_file(filename,filter,ArrSinhVien,slsv)) {
+        GtkAlertDialog *alert = gtk_alert_dialog_new("Xuất file thất bại");
+        gtk_alert_dialog_set_detail(alert, "Không thể ghi file hoặc không có dữ liệu phù hợp.");
+        gtk_alert_dialog_show(alert, GTK_WINDOW(exp->window));
+        return;
+    }
+
+    char msg[256];
+
+    snprintf(msg, sizeof(msg), "Đã xuất danh sách vào file:\n%s", filename);
+
+    GtkAlertDialog *alert = gtk_alert_dialog_new("Xuất file thành công");
+    gtk_alert_dialog_set_detail(alert, msg);
+    gtk_alert_dialog_show(alert, GTK_WINDOW(exp->window));
+}
+void on_show_export_preview(GtkWidget *widget, gpointer data) {
+    SinhvienWidgets *app = (SinhvienWidgets*)data;
+
+    GtkWidget *window = gtk_window_new();
+    gtk_window_set_title(GTK_WINDOW(window), "Xem trước xuất file");
+    gtk_window_set_default_size(GTK_WINDOW(window), 1000, 700);
+
+    GtkRoot *root = gtk_widget_get_root(widget);
+    if (GTK_IS_WINDOW(root)) {
+        gtk_window_set_transient_for(GTK_WINDOW(window), GTK_WINDOW(root));
+        gtk_window_set_modal(GTK_WINDOW(window), TRUE);
+    }
+
+    GtkWidget *main_box = gtk_box_new(GTK_ORIENTATION_VERTICAL, 15);
+    set_margin_all(main_box, 20);
+    gtk_window_set_child(GTK_WINDOW(window), main_box);
+
+    GtkWidget *title = gtk_label_new(NULL);
+    gtk_label_set_markup(GTK_LABEL(title), "<span size='xx-large' weight='bold'>XEM TRƯỚC DANH SÁCH SINH VIÊN</span>");
+    gtk_box_append(GTK_BOX(main_box), title);
+
+    char buf[100];
+    sprintf(buf, "Tổng số sinh viên trong file %s là: %d", CurrentFileName, slsv);
+
+    GtkWidget *info = gtk_label_new(buf);
+    gtk_box_append(GTK_BOX(main_box), info);
+
+    GtkWidget *scrolled = gtk_scrolled_window_new();
+    gtk_widget_set_vexpand(scrolled, TRUE);
+    gtk_box_append(GTK_BOX(main_box), scrolled);
+
+    GtkWidget *textview = gtk_text_view_new();
+    gtk_text_view_set_editable(GTK_TEXT_VIEW(textview), FALSE);
+    gtk_text_view_set_cursor_visible(GTK_TEXT_VIEW(textview), FALSE);
+    gtk_widget_add_css_class(textview, "preview-text");
+    
+    gtk_text_view_set_monospace(GTK_TEXT_VIEW(textview), TRUE);
+    gtk_scrolled_window_set_child(GTK_SCROLLED_WINDOW(scrolled), textview);
+    
+    const char *classFilter = gtk_editable_get_text(GTK_EDITABLE(app->listFilterEntry));
+    char filter[64] = "";
+    if (classFilter != NULL && strlen(classFilter) > 0) {
+        strncpy(filter, classFilter, sizeof(filter) - 1);
+        filter[sizeof(filter) - 1] = '\0';
+        vietHoaTatCa(filter);
+    }
+    
+    int count = 0;
+    for(int i = 0; i < slsv; i++) {
+        if (strlen(filter) > 0 && strcmp(ArrSinhVien[i].Class, filter) != 0) continue;
+        count++;
+    }
+    GtkTextBuffer *buffer = gtk_text_view_get_buffer(GTK_TEXT_VIEW(textview));
+
+    GString *content = g_string_new("");
+
+    if (strlen(filter) == 0) g_string_append_printf(content, "Tổng số sinh viên trong file hiển thị: %d\n\n", count);
+    else g_string_append_printf(content, "Tổng số sinh viên trong lớp %s hiển thị: %d\n\n", filter, count);
+    int stt = 1;
+
+    for (int i = 0; i < slsv; i++) {
+
+        if (strlen(filter) > 0 &&
+            strcmp(ArrSinhVien[i].Class, filter) != 0)
+            continue;
+
+        g_string_append_printf(
+            content,
+
+            "══════════════════════════════════════════════════════\n"
+            "[%03d] \n"
+            "MSSV      : %lld\n"
+            "Họ tên    : %s\n"
+            "Lớp       : %s\n"
+            "Giới tính : %s\n"
+            "Ngày sinh : %02d/%02d/%04d\n"
+            "Email     : %s\n"
+            "Địa chỉ   : %s\n\n",
+
+            stt++,
+
+            ArrSinhVien[i].MaSV,
+            ArrSinhVien[i].Name,
+            ArrSinhVien[i].Class,
+            ArrSinhVien[i].Gender,
+
+            ArrSinhVien[i].NgaySinh.day,
+            ArrSinhVien[i].NgaySinh.month,
+            ArrSinhVien[i].NgaySinh.year,
+
+            ArrSinhVien[i].Email,
+            ArrSinhVien[i].Address
+        );
+    }
+
+    gtk_text_buffer_set_text(buffer, content->str, -1);
+    g_string_free(content, TRUE); 
+    
+    GtkWidget *button_box = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 10);
+    gtk_widget_set_halign(button_box, GTK_ALIGN_END);
+    gtk_widget_set_valign(button_box, GTK_ALIGN_CENTER);
+
+    GtkWidget *lbl_file = gtk_label_new("Tên file:");
+    GtkWidget *entry_file = gtk_entry_new();
+    gtk_widget_set_size_request(entry_file, 250, 35);
+    
+    if (strlen(filter) == 0) gtk_editable_set_text(GTK_EDITABLE(entry_file),CurrentFileName); 
+    else {
+        char default_filename[100];
+        sprintf(default_filename, "danhsach_%s.txt", filter);
+        gtk_editable_set_text(GTK_EDITABLE(entry_file), default_filename);
+    }   
+
+    GtkWidget *btn_close = gtk_button_new_with_label("Đóng");
+    gtk_widget_set_size_request(btn_close, 80, 35);
+    g_signal_connect_swapped(btn_close, "clicked", G_CALLBACK(gtk_window_destroy), window);
+
+    gtk_box_append(GTK_BOX(button_box), lbl_file);
+    gtk_box_append(GTK_BOX(button_box), entry_file);
+    gtk_box_append(GTK_BOX(button_box), btn_close);
+
+    ExportPreviewData *exp = g_malloc(sizeof(ExportPreviewData));
+    exp->app = app;
+    exp->entry_file = entry_file;
+    exp->window = window;
+    
+    g_signal_connect_swapped(window, "destroy", G_CALLBACK(g_free), exp);
+
+    GtkWidget *btn_export = gtk_button_new_with_label("Xuất file");
+    gtk_widget_set_size_request(btn_export, 90, 35);
+    gtk_box_append(GTK_BOX(button_box), btn_export);
+    
+    g_signal_connect(btn_export, "clicked", G_CALLBACK(on_export_list_clicked), exp);
+
+    gtk_box_append(GTK_BOX(main_box), button_box);
+    
+    gtk_window_present(GTK_WINDOW(window));
 }
 
 GtkWidget* create_list_sv_ui(SinhvienWidgets *widgets) {
@@ -737,30 +1111,49 @@ GtkWidget* create_list_sv_ui(SinhvienWidgets *widgets) {
 
     GtkWidget *filter_box = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 10);
     gtk_widget_set_margin_top(filter_box, 10);
-    gtk_widget_set_halign(filter_box, GTK_ALIGN_CENTER);
+    gtk_widget_set_halign(filter_box, GTK_ALIGN_FILL);
 
-    GtkWidget *filter_label = gtk_label_new("Lọc Lớp:");
+    //======================= left box
+    GtkWidget *left_box = gtk_box_new(GTK_ORIENTATION_VERTICAL, 10);
+    
+    // back button
+    GtkWidget *btn_back = gtk_button_new_with_label("◀ Quay lại Menu");
+    gtk_widget_add_css_class(btn_back, "label-btn");
+    gtk_widget_add_css_class(btn_back, "border-label");
+    gtk_widget_set_size_request(btn_back, 250, 50);
+    g_signal_connect(btn_back, "clicked", G_CALLBACK(on_back_clicked), widgets);
+    gtk_widget_add_css_class(btn_back, "back-button");
+    gtk_box_append(GTK_BOX(left_box), btn_back);
+
+    // space
+    GtkWidget *space1 = gtk_box_new(GTK_ORIENTATION_VERTICAL, 10);
+    gtk_widget_set_hexpand(space1, TRUE);
+    
+    GtkWidget *filter_label = gtk_label_new(NULL);
+    gtk_label_set_markup(GTK_LABEL(filter_label), "<span size = 'large' weight='bold'>LỌC LỚP: </span>");
     gtk_widget_set_size_request(filter_label, 80, -1);
     widgets->listFilterEntry = gtk_entry_new();
     gtk_entry_set_placeholder_text(GTK_ENTRY(widgets->listFilterEntry), "VD: 22T_DT1");
     gtk_widget_set_size_request(widgets->listFilterEntry, 200, 35);
+    g_signal_connect(widgets->listFilterEntry, "activate", G_CALLBACK(on_filter_list_clicked), widgets);
 
-    GtkWidget *btn_filter = gtk_button_new_with_label("Lọc");
-    gtk_widget_set_size_request(btn_filter, 90, 35);
-    g_signal_connect(btn_filter, "clicked", G_CALLBACK(on_filter_list_clicked), widgets);
-
-    GtkWidget *btn_clear = gtk_button_new_with_label("Xóa");
-    gtk_widget_set_size_request(btn_clear, 90, 35);
-    g_signal_connect(btn_clear, "clicked", G_CALLBACK(on_clear_list_filter_clicked), widgets);
+    GtkWidget *btn_clear_filter = gtk_button_new_with_label("Xóa bộ lọc");
+    gtk_widget_add_css_class(btn_clear_filter, "label-btn");
+    gtk_widget_add_css_class(btn_clear_filter, "border-label");
+    gtk_widget_set_size_request(btn_clear_filter, 120, 35);
+    g_signal_connect(btn_clear_filter, "clicked", G_CALLBACK(on_clear_list_filter_clicked), widgets);
 
     GtkWidget *btn_export = gtk_button_new_with_label("Xuất file");
+    gtk_widget_add_css_class(btn_export, "label-btn");
+    gtk_widget_add_css_class(btn_export, "border-label");
     gtk_widget_set_size_request(btn_export, 90, 35);
-    g_signal_connect(btn_export, "clicked", G_CALLBACK(on_export_list_clicked), widgets);
+    g_signal_connect(btn_export, "clicked", G_CALLBACK(on_show_export_preview), widgets);
 
+    gtk_box_append(GTK_BOX(filter_box), left_box);
+    gtk_box_append(GTK_BOX(filter_box), space1);
     gtk_box_append(GTK_BOX(filter_box), filter_label);
     gtk_box_append(GTK_BOX(filter_box), widgets->listFilterEntry);
-    gtk_box_append(GTK_BOX(filter_box), btn_filter);
-    gtk_box_append(GTK_BOX(filter_box), btn_clear);
+    gtk_box_append(GTK_BOX(filter_box), btn_clear_filter);
     gtk_box_append(GTK_BOX(filter_box), btn_export);
     gtk_box_append(GTK_BOX(vbox), filter_box);
 
@@ -780,10 +1173,6 @@ GtkWidget* create_list_sv_ui(SinhvienWidgets *widgets) {
     gtk_scrolled_window_set_child(GTK_SCROLLED_WINDOW(scrolled), widgets->list_box);
     gtk_box_append(GTK_BOX(vbox), scrolled);
 
-    GtkWidget *btn_back = gtk_button_new_with_label("Quay lại Menu");
-    g_signal_connect(btn_back, "clicked", G_CALLBACK(on_back_clicked), widgets);
-    gtk_widget_add_css_class(btn_back, "back-button");
-    gtk_box_append(GTK_BOX(vbox), btn_back);
 
     return vbox;
 }
@@ -821,7 +1210,7 @@ void refresh_search_results(SinhvienWidgets *app, int search_type) {
                 gtk_image_set_pixel_size(GTK_IMAGE(icon), 40);
 
                 GtkWidget *lbl = gtk_label_new(NULL);
-                char *txt = g_strdup_printf("<b>%s</b>\n<span size='small' color='#666666'>MSSV: %lld | Lớp: %s\nGiới tính: %s | Địa chỉ: %s\nEmail: %s</span>", 
+                char *txt = g_strdup_printf("<b>%s</b>\n<span size='medium' color='#666666'>MSSV: %lld | Lớp: %s\nGiới tính: %s | Địa chỉ: %s\nEmail: %s</span>", 
                                             ArrSinhVien[i].Name, ArrSinhVien[i].MaSV, ArrSinhVien[i].Class,
                                             ArrSinhVien[i].Gender, ArrSinhVien[i].Address, ArrSinhVien[i].Email);
                 gtk_label_set_markup(GTK_LABEL(lbl), txt);
@@ -845,7 +1234,7 @@ void refresh_search_results(SinhvienWidgets *app, int search_type) {
                 gtk_image_set_pixel_size(GTK_IMAGE(icon), 40);
 
                 GtkWidget *lbl = gtk_label_new(NULL);
-                char *txt = g_strdup_printf("<b>%s</b>\n<span size='small' color='#666666'>MSSV: %lld | Lớp: %s\nGiới tính: %s | Địa chỉ: %s\nEmail: %s</span>", 
+                char *txt = g_strdup_printf("<b>%s</b>\n<span size='medium' color='#666666'>MSSV: %lld | Lớp: %s\nGiới tính: %s | Địa chỉ: %s\nEmail: %s</span>", 
                                             ArrSinhVien[i].Name, ArrSinhVien[i].MaSV, ArrSinhVien[i].Class,
                                             ArrSinhVien[i].Gender, ArrSinhVien[i].Address, ArrSinhVien[i].Email);
                 gtk_label_set_markup(GTK_LABEL(lbl), txt);
@@ -863,7 +1252,9 @@ void refresh_search_results(SinhvienWidgets *app, int search_type) {
 
     if (!found) {
         GtkWidget *row = create_student_card_box(10);
-        GtkWidget *lbl = gtk_label_new("❌ Không tìm thấy sinh viên nào!");
+        GtkWidget *lbl = gtk_label_new(NULL);
+        char *smg = g_strdup_printf("<span size = 'large' weight = 'bold' color = 'red'> ❌ Không tìm thấy sinh viên nào! </span>");
+        gtk_label_set_markup(GTK_LABEL(lbl), smg);
         gtk_box_append(GTK_BOX(row), lbl);
         gtk_flow_box_insert(GTK_FLOW_BOX(app->searchListBox), row, -1);
     }
@@ -996,7 +1387,8 @@ void refresh_delete_list(SinhvienWidgets *app) {
 
     if (slsv == 0) {
         GtkWidget *row = create_student_card_box(10);
-        GtkWidget *lbl = gtk_label_new("❌ Danh sách sinh viên đang trống!");
+        GtkWidget *lbl = gtk_label_new(NULL);
+        gtk_label_set_markup(GTK_LABEL(lbl), "<span size='large' weight='bold' color='#ff0000'>❌ Không có sinh viên nào!</span>");
         gtk_box_append(GTK_BOX(row), lbl);
         gtk_flow_box_insert(GTK_FLOW_BOX(app->deleteListBox), row, -1);
         return;
@@ -1009,7 +1401,7 @@ void refresh_delete_list(SinhvienWidgets *app) {
         gtk_image_set_pixel_size(GTK_IMAGE(icon), 40);
 
         GtkWidget *lbl = gtk_label_new(NULL);
-        char *txt = g_strdup_printf("<b>%s</b>\n<span size='small' color='#666666'>MSSV: %lld | Lớp: %s | Năm sinh: %d\nGiới tính: %s | Địa chỉ: %s\nEmail: %s</span>", 
+        char *txt = g_strdup_printf("<b>%s</b>\n<span size='medium' color='#666666'>MSSV: %lld | Lớp: %s | Năm sinh: %d\nGiới tính: %s | Địa chỉ: %s\nEmail: %s</span>", 
                                     ArrSinhVien[i].Name, ArrSinhVien[i].MaSV, ArrSinhVien[i].Class, ArrSinhVien[i].NgaySinh.year,
                                     ArrSinhVien[i].Gender, ArrSinhVien[i].Address, ArrSinhVien[i].Email);
         gtk_label_set_markup(GTK_LABEL(lbl), txt);
@@ -1019,6 +1411,10 @@ void refresh_delete_list(SinhvienWidgets *app) {
         gtk_box_append(GTK_BOX(row), icon);
         gtk_box_append(GTK_BOX(row), lbl);
         gtk_flow_box_insert(GTK_FLOW_BOX(app->deleteListBox), row, -1);
+        GtkWidget *flow_child = gtk_widget_get_parent(row);
+        if (flow_child) {
+            g_object_set_data(G_OBJECT(flow_child), "student-index", GINT_TO_POINTER(i + 1));
+        }
     }
 }
 
@@ -1027,7 +1423,10 @@ static int get_selected_delete_index(SinhvienWidgets *app) {
     int index = -1;
     if (selected_children) {
         GtkFlowBoxChild *child = GTK_FLOW_BOX_CHILD(selected_children->data);
-        index = gtk_flow_box_child_get_index(child);
+        gpointer stored_index = g_object_get_data(G_OBJECT(child), "student-index");
+        if (stored_index) {
+            index = GPOINTER_TO_INT(stored_index) - 1;
+        }
         g_list_free(selected_children);
     }
     return index;
@@ -1035,26 +1434,26 @@ static int get_selected_delete_index(SinhvienWidgets *app) {
 
 /* deleted: remove delete-by-name flow (replaced by search/edit flow) */
 
-void on_delete_by_mssv(GtkWidget *widget, gpointer data) {
-    SinhvienWidgets *app = (SinhvienWidgets *)data;
-    const char *mssv_text = gtk_editable_get_text(GTK_EDITABLE(app->deleteMSSVEntry));
-    if (strlen(mssv_text) == 0) {
-        char *markup = g_strdup_printf("<span color='red' weight='bold'>⚠️ Vui lòng nhập MSSV!</span>");
-        gtk_label_set_markup(GTK_LABEL(app->deleteMsg), markup);
-        g_free(markup);
-        return;
-    }
+// void on_delete_by_mssv(GtkWidget *widget, gpointer data) {
+//     SinhvienWidgets *app = (SinhvienWidgets *)data;
+//     const char *mssv_text = gtk_editable_get_text(GTK_EDITABLE(app->deleteMSSVEntry));
+//     if (strlen(mssv_text) == 0) {
+//         char *markup = g_strdup_printf("<span color='red' weight='bold'>⚠️ Vui lòng nhập MSSV!</span>");
+//         gtk_label_set_markup(GTK_LABEL(app->deleteMsg), markup);
+//         g_free(markup);
+//         return;
+//     }
 
-    long long mssv = atoll(mssv_text);
-    DeleteData *dd = g_new(DeleteData, 1);
-    dd->app = app;
-    dd->mssv = mssv;
+//     long long mssv = atoll(mssv_text);
+//     DeleteData *dd = g_new(DeleteData, 1);
+//     dd->app = app;
+//     dd->mssv = mssv;
 
-    GtkAlertDialog *dialog = gtk_alert_dialog_new("❗️ Xác nhận xóa");
-    gtk_alert_dialog_set_detail(dialog, "‼️ Bạn có chắc chắn muốn xóa sinh viên có MSSV này?");
-    gtk_alert_dialog_set_buttons(dialog, (const char *[]){"Hủy", "Xóa", NULL});
-    gtk_alert_dialog_choose(dialog, GTK_WINDOW(gtk_widget_get_root(widget)), NULL, on_delete_by_mssv_confirm, dd);
-}
+//     GtkAlertDialog *dialog = gtk_alert_dialog_new("❗️ Xác nhận xóa");
+//     gtk_alert_dialog_set_detail(dialog, "‼️ Bạn có chắc chắn muốn xóa sinh viên có MSSV này?");
+//     gtk_alert_dialog_set_buttons(dialog, (const char *[]){"Hủy", "Xóa", NULL});
+//     gtk_alert_dialog_choose(dialog, GTK_WINDOW(gtk_widget_get_root(widget)), NULL, on_delete_by_mssv_confirm, dd);
+// }
 
 void on_delete_clicked(GtkWidget *widget, gpointer data) {
     SinhvienWidgets *app = (SinhvienWidgets *)data;
@@ -1088,44 +1487,44 @@ void on_delete_clicked(GtkWidget *widget, gpointer data) {
 
 /* deleted: old confirmation handler for delete-by-name */
 
-static void on_delete_by_mssv_confirm(GObject *source, GAsyncResult *result, gpointer data) {
-    DeleteData *dd = (DeleteData *)data;
-    int response = gtk_alert_dialog_choose_finish(GTK_ALERT_DIALOG(source), result, NULL);
-    if (response == 1) {
-        int found = 0;
-        for (int i = 0; i < slsv; i++) {
-            if (ArrSinhVien[i].MaSV == dd->mssv) {
-                for (int j = i; j < slsv - 1; j++) {
-                    ArrSinhVien[j] = ArrSinhVien[j + 1];
-                }
-                slsv--;
-                found = 1;
-                break;
-            }
-        }
-        if (found) {
-            LuuVaoFile(ArrSinhVien, slsv);
-            DaSapXep = 0;
-            // Hiện dialog thông báo thành công
-            GtkAlertDialog *success_dialog = gtk_alert_dialog_new("🎉 Xóa thành công");
-            char *detail = g_strdup_printf("🎉 Đã xóa sinh viên có MSSV %lld.", dd->mssv);
-            gtk_alert_dialog_set_detail(success_dialog, detail);
-            gtk_alert_dialog_set_buttons(success_dialog, (const char *[]){
-                "OK", NULL});
-            gtk_alert_dialog_show(success_dialog, GTK_WINDOW(gtk_widget_get_root(GTK_WIDGET(dd->app->deleteMSSVEntry))));
-            g_free(detail);
-        } else {
-            GtkAlertDialog *error_dialog = gtk_alert_dialog_new("⚠️ Lỗi");
-            gtk_alert_dialog_set_detail(error_dialog, "⚠️ Không tìm thấy MSSV này!");
-            gtk_alert_dialog_set_buttons(error_dialog, (const char *[]){
-                "OK", NULL});
-            gtk_alert_dialog_show(error_dialog, GTK_WINDOW(gtk_widget_get_root(GTK_WIDGET(dd->app->deleteMSSVEntry))));
-        }
-        gtk_editable_set_text(GTK_EDITABLE(dd->app->deleteMSSVEntry), "");
-        refresh_delete_list(dd->app);
-    }
-    g_free(dd);
-}
+// static void on_delete_by_mssv_confirm(GObject *source, GAsyncResult *result, gpointer data) {
+//     DeleteData *dd = (DeleteData *)data;
+//     int response = gtk_alert_dialog_choose_finish(GTK_ALERT_DIALOG(source), result, NULL);
+//     if (response == 1) {
+//         int found = 0;
+//         for (int i = 0; i < slsv; i++) {
+//             if (ArrSinhVien[i].MaSV == dd->mssv) {
+//                 for (int j = i; j < slsv - 1; j++) {
+//                     ArrSinhVien[j] = ArrSinhVien[j + 1];
+//                 }
+//                 slsv--;
+//                 found = 1;
+//                 break;
+//             }
+//         }
+//         if (found) {
+//             LuuVaoFile(ArrSinhVien, slsv);
+//             DaSapXep = 0;
+//             // Hiện dialog thông báo thành công
+//             GtkAlertDialog *success_dialog = gtk_alert_dialog_new("🎉 Xóa thành công");
+//             char *detail = g_strdup_printf("🎉 Đã xóa sinh viên có MSSV %lld.", dd->mssv);
+//             gtk_alert_dialog_set_detail(success_dialog, detail);
+//             gtk_alert_dialog_set_buttons(success_dialog, (const char *[]){
+//                 "OK", NULL});
+//             gtk_alert_dialog_show(success_dialog, GTK_WINDOW(gtk_widget_get_root(GTK_WIDGET(dd->app->deleteEntry))));
+//             g_free(detail);
+//         } else {
+//             GtkAlertDialog *error_dialog = gtk_alert_dialog_new("⚠️ Lỗi");
+//             gtk_alert_dialog_set_detail(error_dialog, "⚠️ Không tìm thấy MSSV này!");
+//             gtk_alert_dialog_set_buttons(error_dialog, (const char *[]){
+//                 "OK", NULL});
+//             gtk_alert_dialog_show(error_dialog, GTK_WINDOW(gtk_widget_get_root(GTK_WIDGET(dd->app->deleteMSSVEntry))));
+//         }
+//         gtk_editable_set_text(GTK_EDITABLE(dd->app->deleteMSSVEntry), "");
+//         refresh_delete_list(dd->app);
+//     }
+//     g_free(dd);
+// }
 
 static void on_delete_selected_confirm(GObject *source, GAsyncResult *result, gpointer data) {
     DeleteData *dd = (DeleteData *)data;
@@ -1162,9 +1561,67 @@ static void on_edit_save(GtkWidget *widget, gpointer user_data) {
     const char *class = gtk_editable_get_text(GTK_EDITABLE(ed->entryClass));
     const char *email = gtk_editable_get_text(GTK_EDITABLE(ed->entryEmail));
 
-    if (strlen(name) == 0) {
+    if (idx < 0 || idx >= slsv) {
+        GtkAlertDialog *err = gtk_alert_dialog_new("Loi");
+        gtk_alert_dialog_set_detail(err, "Sinh vien nay khong con ton tai.");
+        gtk_alert_dialog_set_buttons(err, (const char *[]){"OK", NULL});
+        gtk_alert_dialog_show(err, GTK_WINDOW(gtk_widget_get_root(ed->window)));
+        return;
+    }
+
+    if (strlen(name) >= sizeof(ArrSinhVien[idx].Name) ||
+        strlen(addr) >= sizeof(ArrSinhVien[idx].Address) ||
+        strlen(class) >= sizeof(ArrSinhVien[idx].Class) ||
+        strlen(email) >= sizeof(ArrSinhVien[idx].Email)) {
+        GtkAlertDialog *err = gtk_alert_dialog_new("Loi");
+        gtk_alert_dialog_set_detail(err, "Thong tin nhap qua dai. Vui long kiem tra lai.");
+        gtk_alert_dialog_set_buttons(err, (const char *[]){"OK", NULL});
+        gtk_alert_dialog_show(err, GTK_WINDOW(gtk_widget_get_root(ed->window)));
+        return;
+    }
+
+    char nameBuf[sizeof(ArrSinhVien[idx].Name)];
+    char addrBuf[sizeof(ArrSinhVien[idx].Address)];
+    char classBuf[sizeof(ArrSinhVien[idx].Class)];
+    char emailBuf[sizeof(ArrSinhVien[idx].Email)];
+    trim_whitespace(nameBuf, name);
+    trim_whitespace(addrBuf, addr);
+    trim_whitespace(classBuf, class);
+    trim_whitespace(emailBuf, email);
+    vietHoaTatCa(classBuf);
+
+    if (strlen(nameBuf) == 0) {
         GtkAlertDialog *err = gtk_alert_dialog_new("Lỗi");
         gtk_alert_dialog_set_detail(err, "Tên không được để trống.");
+        gtk_alert_dialog_set_buttons(err, (const char *[]){"OK", NULL});
+        gtk_alert_dialog_show(err, GTK_WINDOW(gtk_widget_get_root(ed->window)));
+        return;
+    }
+
+    if (sel != 1 && sel != 2) {
+        GtkAlertDialog *err = gtk_alert_dialog_new("Loi");
+        gtk_alert_dialog_set_detail(err, "Vui long chon gioi tinh.");
+        gtk_alert_dialog_set_buttons(err, (const char *[]){"OK", NULL});
+        gtk_alert_dialog_show(err, GTK_WINDOW(gtk_widget_get_root(ed->window)));
+        return;
+    }
+    if (strlen(addrBuf) == 0) {
+        GtkAlertDialog *err = gtk_alert_dialog_new("Loi");
+        gtk_alert_dialog_set_detail(err, "Dia chi khong duoc de trong.");
+        gtk_alert_dialog_set_buttons(err, (const char *[]){"OK", NULL});
+        gtk_alert_dialog_show(err, GTK_WINDOW(gtk_widget_get_root(ed->window)));
+        return;
+    }
+    if (strlen(classBuf) == 0) {
+        GtkAlertDialog *err = gtk_alert_dialog_new("Loi lop");
+        gtk_alert_dialog_set_detail(err, "Lop khong duoc de trong.");
+        gtk_alert_dialog_set_buttons(err, (const char *[]){"OK", NULL});
+        gtk_alert_dialog_show(err, GTK_WINDOW(gtk_widget_get_root(ed->window)));
+        return;
+    }
+    if (strlen(emailBuf) == 0) {
+        GtkAlertDialog *err = gtk_alert_dialog_new("Loi email");
+        gtk_alert_dialog_set_detail(err, "Email khong duoc de trong.");
         gtk_alert_dialog_set_buttons(err, (const char *[]){"OK", NULL});
         gtk_alert_dialog_show(err, GTK_WINDOW(gtk_widget_get_root(ed->window)));
         return;
@@ -1180,8 +1637,6 @@ static void on_edit_save(GtkWidget *widget, gpointer user_data) {
     }
 
     // Kiểm tra tính hợp lệ của tên lớp trước khi áp dụng thay đổi
-    char classBuf[128];
-    trim_whitespace(classBuf, class);
     char KhoaNew[128] = {0}, TenLopNew[128] = {0};
     char KhoaOld[128] = {0}, TenLopOld[128] = {0};
     TachLop(classBuf, KhoaNew, TenLopNew);
@@ -1204,6 +1659,9 @@ static void on_edit_save(GtkWidget *widget, gpointer user_data) {
             return;
         }
         int classSize = count_students_in_class(ArrSinhVien, slsv, classBuf);
+        if (strcmp(ArrSinhVien[idx].Class, classBuf) == 0 && classSize > 0) {
+            classSize--;
+        }
         if (classSize >= 100) {
             char msg[512];
             build_class_limit_message(ArrSinhVien, slsv, classBuf, msg, sizeof(msg));
@@ -1240,7 +1698,7 @@ static void on_edit_save(GtkWidget *widget, gpointer user_data) {
     }
 
     // Apply changes
-    strncpy(ArrSinhVien[idx].Name, name, sizeof(ArrSinhVien[idx].Name) - 1);
+    strncpy(ArrSinhVien[idx].Name, nameBuf, sizeof(ArrSinhVien[idx].Name) - 1);
     ArrSinhVien[idx].Name[sizeof(ArrSinhVien[idx].Name) - 1] = '\0';
     vietHoaTatCa(ArrSinhVien[idx].Name);
     ArrSinhVien[idx].NgaySinh.day = d;
@@ -1248,11 +1706,12 @@ static void on_edit_save(GtkWidget *widget, gpointer user_data) {
     ArrSinhVien[idx].NgaySinh.year = y;
     strncpy(ArrSinhVien[idx].Gender, gender, sizeof(ArrSinhVien[idx].Gender) - 1);
     ArrSinhVien[idx].Gender[sizeof(ArrSinhVien[idx].Gender) - 1] = '\0';
-    strncpy(ArrSinhVien[idx].Address, addr, sizeof(ArrSinhVien[idx].Address) - 1);
+    strncpy(ArrSinhVien[idx].Address, addrBuf, sizeof(ArrSinhVien[idx].Address) - 1);
     ArrSinhVien[idx].Address[sizeof(ArrSinhVien[idx].Address) - 1] = '\0';
-    strncpy(ArrSinhVien[idx].Class, class, sizeof(ArrSinhVien[idx].Class) - 1);
+    vietHoaChuDau(ArrSinhVien[idx].Address);
+    strncpy(ArrSinhVien[idx].Class, classBuf, sizeof(ArrSinhVien[idx].Class) - 1);
     ArrSinhVien[idx].Class[sizeof(ArrSinhVien[idx].Class) - 1] = '\0';
-    strncpy(ArrSinhVien[idx].Email, email, sizeof(ArrSinhVien[idx].Email) - 1);
+    strncpy(ArrSinhVien[idx].Email, emailBuf, sizeof(ArrSinhVien[idx].Email) - 1);
     ArrSinhVien[idx].Email[sizeof(ArrSinhVien[idx].Email) - 1] = '\0';
 
     // Persist and refresh
@@ -1344,6 +1803,8 @@ static void on_edit_clicked(GtkWidget *widget, gpointer data) {
     gtk_box_append(GTK_BOX(row_class), lbl_class);
     ed->entryClass = gtk_entry_new();
     gtk_editable_set_text(GTK_EDITABLE(ed->entryClass), ArrSinhVien[selectedIndex].Class);
+    gtk_editable_set_editable(GTK_EDITABLE(ed->entryClass), FALSE);
+    gtk_widget_add_css_class(ed->entryClass, "readonly-entry");
     gtk_box_append(GTK_BOX(row_class), ed->entryClass);
     gtk_box_append(GTK_BOX(content), row_class);
 
@@ -1353,6 +1814,8 @@ static void on_edit_clicked(GtkWidget *widget, gpointer data) {
     gtk_box_append(GTK_BOX(row_email), lbl_email);
     ed->entryEmail = gtk_entry_new();
     gtk_editable_set_text(GTK_EDITABLE(ed->entryEmail), ArrSinhVien[selectedIndex].Email);
+    gtk_editable_set_editable(GTK_EDITABLE(ed->entryEmail), FALSE);
+    gtk_widget_add_css_class(ed->entryEmail, "readonly-entry");
     gtk_box_append(GTK_BOX(row_email), ed->entryEmail);
     gtk_box_append(GTK_BOX(content), row_email);
 
@@ -1371,21 +1834,17 @@ static void on_edit_clicked(GtkWidget *widget, gpointer data) {
 
 static void on_reset_delete_view(GtkWidget *widget, gpointer data) {
     SinhvienWidgets *app = (SinhvienWidgets *)data;
-    if (app->deleteNameEntry)
-        gtk_editable_set_text(GTK_EDITABLE(app->deleteNameEntry), "");
-    if (app->deleteMSSVEntry)
-        gtk_editable_set_text(GTK_EDITABLE(app->deleteMSSVEntry), "");
+    if (app->deleteEntry)
+        gtk_editable_set_text(GTK_EDITABLE(app->deleteEntry), "");
     gtk_label_set_text(GTK_LABEL(app->deleteMsg), "");
     refresh_delete_list(app);
 }
 
-void on_show_list_by_name(GtkWidget *widget, gpointer data) {
+void on_show_list_by_name_and_mssv(GtkWidget *widget, gpointer data) {
     SinhvienWidgets *app = (SinhvienWidgets *)data;
-    const char *name = gtk_editable_get_text(GTK_EDITABLE(app->deleteNameEntry));
-    if (strlen(name) == 0) {
-        char *markup = g_strdup_printf("<span color='red' weight='bold'>⚠️ Vui lòng nhập tên!</span>");
-        gtk_label_set_markup(GTK_LABEL(app->deleteMsg), markup);
-        g_free(markup);
+    const char *string = gtk_editable_get_text(GTK_EDITABLE(app->deleteEntry));
+    if (strlen(string) == 0) {
+        on_reset_delete_view(NULL, app);
         return;
     }
     
@@ -1397,83 +1856,65 @@ void on_show_list_by_name(GtkWidget *widget, gpointer data) {
     }
     
     char name_upper[100];
-    strcpy(name_upper, name);
+    strcpy(name_upper, string);
     vietHoaTatCa(name_upper);
     int found = 0;
-    
-    for (int i = 0; i < slsv; i++) {
-        if (strstr(ArrSinhVien[i].Name, name_upper) != NULL) {
-            GtkWidget *row = create_student_card_box(15);
-            GtkWidget *icon = gtk_image_new_from_icon_name("avatar-default-symbolic");
-            gtk_image_set_pixel_size(GTK_IMAGE(icon), 40);
-            GtkWidget *lbl = gtk_label_new(NULL);
-            char *txt = g_strdup_printf("<b>%s</b>\n<span size='small' color='#666666'>MSSV: %lld | Lớp: %s\nGiới tính: %s | Địa chỉ: %s\nEmail: %s</span>", 
-                                        ArrSinhVien[i].Name, ArrSinhVien[i].MaSV, ArrSinhVien[i].Class,
-                                        ArrSinhVien[i].Gender, ArrSinhVien[i].Address, ArrSinhVien[i].Email);
-            gtk_label_set_markup(GTK_LABEL(lbl), txt);
-            gtk_label_set_xalign(GTK_LABEL(lbl), 0);
-            g_free(txt);
-            gtk_box_append(GTK_BOX(row), icon);
-            gtk_box_append(GTK_BOX(row), lbl);
-            gtk_flow_box_insert(GTK_FLOW_BOX(app->deleteListBox), row, -1);
-            found = 1;
-        }
-    }
-    
-    if (!found) {
-        GtkWidget *row = create_student_card_box(10);
-        GtkWidget *lbl = gtk_label_new("❌ Không tìm thấy sinh viên nào với tên này!");
-        gtk_box_append(GTK_BOX(row), lbl);
-        gtk_flow_box_insert(GTK_FLOW_BOX(app->deleteListBox), row, -1);
-    }
-    
-    gtk_label_set_text(GTK_LABEL(app->deleteMsg), "");
-    app->selectedDeleteIndex = -1;
-}
 
-void on_show_list_by_mssv(GtkWidget *widget, gpointer data) {
-    SinhvienWidgets *app = (SinhvienWidgets *)data;
-    const char *mssv_text = gtk_editable_get_text(GTK_EDITABLE(app->deleteMSSVEntry));
-    if (strlen(mssv_text) == 0) {
-        char *markup = g_strdup_printf("<span color='red' weight='bold'>⚠️ Vui lòng nhập MSSV!</span>");
-        gtk_label_set_markup(GTK_LABEL(app->deleteMsg), markup);
-        g_free(markup);
-        return;
-    }
-    
-    // Xóa danh sách cũ
-    GtkWidget *child = gtk_widget_get_first_child(app->deleteListBox);
-    while (child) {
-        gtk_flow_box_remove(GTK_FLOW_BOX(app->deleteListBox), child);
-        child = gtk_widget_get_first_child(app->deleteListBox);
-    }
-    
-    long long maTim = atoll(mssv_text);
-    int found = 0;
-    
-    for (int i = 0; i < slsv; i++) {
-        if (ArrSinhVien[i].MaSV == maTim) {
-            GtkWidget *row = create_student_card_box(15);
-            GtkWidget *icon = gtk_image_new_from_icon_name("avatar-default-symbolic");
-            gtk_image_set_pixel_size(GTK_IMAGE(icon), 40);
-            GtkWidget *lbl = gtk_label_new(NULL);
-            char *txt = g_strdup_printf("<b>%s</b>\n<span size='small' color='#666666'>MSSV: %lld | Lớp: %s\nGiới tính: %s | Địa chỉ: %s\nEmail: %s</span>", 
-                                        ArrSinhVien[i].Name, ArrSinhVien[i].MaSV, ArrSinhVien[i].Class,
-                                        ArrSinhVien[i].Gender, ArrSinhVien[i].Address, ArrSinhVien[i].Email);
-            gtk_label_set_markup(GTK_LABEL(lbl), txt);
-            gtk_label_set_xalign(GTK_LABEL(lbl), 0);
-            g_free(txt);
-            gtk_box_append(GTK_BOX(row), icon);
-            gtk_box_append(GTK_BOX(row), lbl);
-            gtk_flow_box_insert(GTK_FLOW_BOX(app->deleteListBox), row, -1);
-            found = 1;
-            break;
+    if (is_all_digits(name_upper)) {
+        long long maTim = atoll(name_upper);
+        for (int i = 0; i < slsv; i++) {
+            if (ArrSinhVien[i].MaSV == maTim) {
+                GtkWidget *row = create_student_card_box(15);
+                GtkWidget *icon = gtk_image_new_from_icon_name("avatar-default-symbolic");
+                gtk_image_set_pixel_size(GTK_IMAGE(icon), 40);
+                GtkWidget *lbl = gtk_label_new(NULL);
+                char *txt = g_strdup_printf("<b>%s</b>\n<span size='medium' color='#666666'>MSSV: %lld | Lớp: %s\nGiới tính: %s | Địa chỉ: %s\nEmail: %s</span>", 
+                                            ArrSinhVien[i].Name, ArrSinhVien[i].MaSV, ArrSinhVien[i].Class,
+                                            ArrSinhVien[i].Gender, ArrSinhVien[i].Address, ArrSinhVien[i].Email);
+                gtk_label_set_markup(GTK_LABEL(lbl), txt);
+                g_free(txt);
+                gtk_box_append(GTK_BOX(row), icon);
+                gtk_box_append(GTK_BOX(row), lbl);
+                gtk_flow_box_insert(GTK_FLOW_BOX(app->deleteListBox), row, -1);
+                GtkWidget *flow_child = gtk_widget_get_parent(row);
+                if (flow_child) {
+                    g_object_set_data(G_OBJECT(flow_child), "student-index", GINT_TO_POINTER(i + 1));
+                }
+                found = 1;
+                break;
+            }
+        }
+    } else {
+        for (int i = 0; i < slsv; i++) {
+            if (strstr(ArrSinhVien[i].Name, name_upper) != NULL) {
+                GtkWidget *row = create_student_card_box(15);
+                GtkWidget *icon = gtk_image_new_from_icon_name("avatar-default-symbolic");
+                gtk_image_set_pixel_size(GTK_IMAGE(icon), 40);
+                GtkWidget *lbl = gtk_label_new(NULL);
+                char *txt = g_strdup_printf("<b>%s</b>\n<span size='medium' color='#666666'>MSSV: %lld | Lớp: %s\nGiới tính: %s | Địa chỉ: %s\nEmail: %s</span>", 
+                                            ArrSinhVien[i].Name, ArrSinhVien[i].MaSV, ArrSinhVien[i].Class,
+                                            ArrSinhVien[i].Gender, ArrSinhVien[i].Address, ArrSinhVien[i].Email);
+                gtk_label_set_markup(GTK_LABEL(lbl), txt);
+                gtk_label_set_xalign(GTK_LABEL(lbl), 0);
+                g_free(txt);
+                gtk_box_append(GTK_BOX(row), icon);
+                gtk_box_append(GTK_BOX(row), lbl);
+                gtk_flow_box_insert(GTK_FLOW_BOX(app->deleteListBox), row, -1);
+                GtkWidget *flow_child = gtk_widget_get_parent(row);
+                if (flow_child) {
+                    gtk_widget_set_size_request(flow_child, 350, 120);
+                    g_object_set_data(G_OBJECT(flow_child), "student-index", GINT_TO_POINTER(i + 1));
+                }
+                found = 1;
+            }
         }
     }
     
     if (!found) {
         GtkWidget *row = create_student_card_box(10);
-        GtkWidget *lbl = gtk_label_new("❌ Không tìm thấy sinh viên nào với MSSV này!");
+        GtkWidget *lbl = gtk_label_new(NULL);
+        char *smg = g_strdup_printf("<span size = 'large' weight = 'bold' color = 'red'> ❌ Không tìm thấy sinh viên nào! </span>");
+        gtk_label_set_markup(GTK_LABEL(lbl), smg);
         gtk_box_append(GTK_BOX(row), lbl);
         gtk_flow_box_insert(GTK_FLOW_BOX(app->deleteListBox), row, -1);
     }
@@ -1501,45 +1942,112 @@ GtkWidget* create_delete_sv_ui(SinhvienWidgets *w) {
 
     // Instructions
     GtkWidget *instr = gtk_label_new(NULL);
-    gtk_label_set_markup(GTK_LABEL(instr), "<span size='small' weight='bold' color='#15ff00'>Chọn sinh viên từ bảng kết quả để Tra cứu, sửa đổi hoặc cập nhật hồ sơ sinh viên theo Tên / MSSV.</span>");
+    gtk_label_set_markup(GTK_LABEL(instr), "<span size='x-large' weight='bold' color='#fffb00'>Chọn sinh viên từ bảng kết quả để Tra cứu, sửa đổi hoặc cập nhật hồ sơ sinh viên theo Tên / MSSV.</span>");
     gtk_label_set_xalign(GTK_LABEL(instr), 0.5);
     gtk_box_append(GTK_BOX(vbox), instr);
 
     // Delete by name / MSSV
     GtkWidget *form_box = gtk_box_new(GTK_ORIENTATION_VERTICAL, 15);
-    gtk_widget_set_halign(form_box, GTK_ALIGN_CENTER);
+    gtk_widget_set_halign(form_box, GTK_ALIGN_FILL);
+    gtk_widget_set_hexpand(form_box, TRUE);
     gtk_widget_set_margin_top(form_box, 10);
 
-    GtkWidget *name_box = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 10);
-    GtkWidget *name_label = gtk_label_new("Tìm theo Họ và Tên:");
-    gtk_widget_set_size_request(name_label, 180, -1);
-    w->deleteNameEntry = gtk_entry_new();
-    gtk_entry_set_placeholder_text(GTK_ENTRY(w->deleteNameEntry), "Nhập tên đầy đủ và nhấn Enter");
-    gtk_widget_set_size_request(w->deleteNameEntry, 260, 35);
-    g_signal_connect(w->deleteNameEntry, "activate", G_CALLBACK(on_show_list_by_name), w);
-    gtk_box_append(GTK_BOX(name_box), name_label);
-    gtk_box_append(GTK_BOX(name_box), w->deleteNameEntry);
-    gtk_box_append(GTK_BOX(form_box), name_box);
+    // ============== box upset
+    GtkWidget *left_name_box = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 0);
+    // Back button
+    GtkWidget *btn_back = gtk_button_new_with_label("◀ Quay lại Menu");
+    gtk_widget_add_css_class(btn_back, "label-btn");
+    gtk_widget_add_css_class(btn_back, "border-label");
+    gtk_widget_set_size_request(btn_back, 160, 50);
+    g_signal_connect(btn_back, "clicked", G_CALLBACK(on_back_clicked), w);
+    gtk_widget_set_margin_top(btn_back, 10);
+    gtk_widget_add_css_class(btn_back, "back-button");
+    gtk_box_append(GTK_BOX(left_name_box), btn_back);
 
+    GtkWidget *center_name_box = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 10);
+    GtkWidget *name_label = gtk_label_new(NULL);
+    gtk_label_set_markup(GTK_LABEL(name_label), "<span size = 'large' weight = 'bold'>  Tìm theo Họ và Tên / MSSV:     \n(Nhấn Enter để reset danh sách) </span>");
+    gtk_widget_set_size_request(name_label, 180, -1);
+    w->deleteEntry = gtk_entry_new();
+    gtk_entry_set_placeholder_text(GTK_ENTRY(w->deleteEntry), "Nhập Tên đầy đủ / MSSV và nhấn Enter");
+    gtk_widget_set_size_request(w->deleteEntry, 260, 35);
+    g_signal_connect(w->deleteEntry, "activate", G_CALLBACK(on_show_list_by_name_and_mssv), w);
+    gtk_box_append(GTK_BOX(center_name_box), name_label);
+    gtk_box_append(GTK_BOX(center_name_box), w->deleteEntry);
+
+    GtkWidget *right_name_box = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 0);
+    GtkWidget *btn_edit_selected = gtk_button_new_with_label("SỬA MỤC ĐÃ CHỌN");
+    gtk_widget_add_css_class(btn_edit_selected, "label-btn");
+    gtk_widget_add_css_class(btn_edit_selected, "border-label");
+    gtk_widget_set_size_request(btn_edit_selected, 160, 50);
+    g_signal_connect(btn_edit_selected, "clicked", G_CALLBACK(on_edit_clicked), w);
+    gtk_box_append(GTK_BOX(right_name_box), btn_edit_selected);
+    
+    // name find box
+    GtkWidget *name_box = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 0);
+    gtk_widget_set_hexpand(name_box, TRUE);
+
+    gtk_box_append(GTK_BOX(name_box), left_name_box);
+    
+    GtkWidget *spacer_name1 = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 0);
+    gtk_widget_set_hexpand(spacer_name1, TRUE);
+    gtk_box_append(GTK_BOX(name_box), spacer_name1);
+
+    gtk_box_append(GTK_BOX(name_box), center_name_box);
+
+    GtkWidget *spacer_name2 = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 0);
+    gtk_widget_set_hexpand(spacer_name2, TRUE);
+    gtk_box_append(GTK_BOX(name_box), spacer_name2);
+
+    gtk_box_append(GTK_BOX(name_box), right_name_box);
+
+    gtk_box_append(GTK_BOX(form_box), name_box);
+    ///=========================
+    
     GtkWidget *separator = gtk_separator_new(GTK_ORIENTATION_HORIZONTAL);
     gtk_box_append(GTK_BOX(form_box), separator);
+    
+    // =================box downset
+    // GtkWidget *center_mssv_box = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 10);
+    // GtkWidget *mssv_label = gtk_label_new(NULL);
+    // gtk_label_set_markup(GTK_LABEL(mssv_label), "<span size = 'large' weight = 'bold'>Tìm theo MSSV : </span>");
+    // gtk_widget_set_size_request(mssv_label, 180, -1);
+    // w->deleteMSSVEntry = gtk_entry_new();
+    // gtk_entry_set_placeholder_text(GTK_ENTRY(w->deleteMSSVEntry), "Nhập MSSV và nhấn Enter");
+    // gtk_widget_set_size_request(w->deleteMSSVEntry, 260, 35);
+    // g_signal_connect(w->deleteMSSVEntry, "activate", G_CALLBACK(on_show_list_by_mssv), w);
+    // gtk_box_append(GTK_BOX(center_mssv_box), mssv_label);
+    // gtk_box_append(GTK_BOX(center_mssv_box), w->deleteMSSVEntry);
 
-    GtkWidget *mssv_box = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 10);
-    GtkWidget *mssv_label = gtk_label_new("Tìm theo MSSV :");
-    gtk_widget_set_size_request(mssv_label, 180, -1);
-    w->deleteMSSVEntry = gtk_entry_new();
-    gtk_entry_set_placeholder_text(GTK_ENTRY(w->deleteMSSVEntry), "Nhập MSSV và nhấn Enter");
-    gtk_widget_set_size_request(w->deleteMSSVEntry, 260, 35);
-    g_signal_connect(w->deleteMSSVEntry, "activate", G_CALLBACK(on_show_list_by_mssv), w);
-    gtk_box_append(GTK_BOX(mssv_box), mssv_label);
-    gtk_box_append(GTK_BOX(mssv_box), w->deleteMSSVEntry);
+    GtkWidget *spacer_mssv1 = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 0);
+    gtk_widget_set_hexpand(spacer_mssv1, TRUE);
+    GtkWidget *spacer_mssv2 = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 0);
+    gtk_widget_set_hexpand(spacer_mssv2, TRUE);
+    
+    GtkWidget *right_mssv_box = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 0);
+    GtkWidget *btn_delete = gtk_button_new_with_label("XÓA MỤC ĐÃ CHỌN");
+    gtk_widget_add_css_class(btn_delete, "label-btn");
+    gtk_widget_add_css_class(btn_delete, "border-label");
+    gtk_widget_set_size_request(btn_delete, 160, 50);
+    g_signal_connect(btn_delete, "clicked", G_CALLBACK(on_delete_clicked), w);
+    gtk_box_append(GTK_BOX(right_mssv_box), btn_delete);
+    
+    // mssv find box
+    GtkWidget *mssv_box = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 0);
+    gtk_widget_set_hexpand(mssv_box, TRUE);
+    
+    gtk_box_append(GTK_BOX(mssv_box), spacer_mssv1);
+    // gtk_box_append(GTK_BOX(mssv_box), center_mssv_box);
+    gtk_box_append(GTK_BOX(mssv_box), spacer_mssv2);
+    gtk_box_append(GTK_BOX(mssv_box), right_mssv_box);
+
     gtk_box_append(GTK_BOX(form_box), mssv_box);
-
+    //=========================
     gtk_box_append(GTK_BOX(vbox), form_box);
 
     // Search results - LIST SELECTION
     GtkWidget *search_label = gtk_label_new(NULL);
-    gtk_label_set_markup(GTK_LABEL(search_label), "<span size='small' weight='bold' color='white'>Danh sách sinh viên:</span>");
+    gtk_label_set_markup(GTK_LABEL(search_label), "<span size='large' weight='bold' color='black'>Danh sách sinh viên:</span>");
     gtk_label_set_xalign(GTK_LABEL(search_label), 0);
     gtk_widget_set_margin_top(search_label, 10);
     gtk_box_append(GTK_BOX(vbox), search_label);
@@ -1547,13 +2055,15 @@ GtkWidget* create_delete_sv_ui(SinhvienWidgets *w) {
     GtkWidget *search_scrolled = gtk_scrolled_window_new();
     gtk_widget_set_size_request(search_scrolled, -1, 250);
     gtk_widget_set_vexpand(search_scrolled, TRUE);
+
     w->deleteListBox = gtk_flow_box_new();
     gtk_flow_box_set_max_children_per_line(GTK_FLOW_BOX(w->deleteListBox), 5);
     gtk_flow_box_set_min_children_per_line(GTK_FLOW_BOX(w->deleteListBox), 1);
+    gtk_flow_box_set_homogeneous(GTK_FLOW_BOX(w->deleteListBox), FALSE);
     gtk_flow_box_set_row_spacing(GTK_FLOW_BOX(w->deleteListBox), 12);
     gtk_flow_box_set_column_spacing(GTK_FLOW_BOX(w->deleteListBox), 12);
     gtk_widget_set_halign(w->deleteListBox, GTK_ALIGN_FILL);
-    gtk_widget_set_hexpand(w->deleteListBox, TRUE);
+    // gtk_widget_set_hexpand(w->deleteListBox, TRUE);
     gtk_flow_box_set_selection_mode(GTK_FLOW_BOX(w->deleteListBox), GTK_SELECTION_SINGLE);
     gtk_scrolled_window_set_child(GTK_SCROLLED_WINDOW(search_scrolled), w->deleteListBox);
     gtk_box_append(GTK_BOX(vbox), search_scrolled);
@@ -1561,35 +2071,6 @@ GtkWidget* create_delete_sv_ui(SinhvienWidgets *w) {
     w->deleteMsg = gtk_label_new("");
     gtk_widget_set_margin_top(w->deleteMsg, 10);
     gtk_box_append(GTK_BOX(vbox), w->deleteMsg);
-
-    GtkWidget *action_box = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 10);
-    gtk_widget_set_halign(action_box, GTK_ALIGN_CENTER);
-    gtk_widget_set_margin_top(action_box, 10);
-
-    GtkWidget *btn_edit_selected = gtk_button_new_with_label("SỬA MỤC ĐÃ CHỌN");
-    gtk_widget_set_size_request(btn_edit_selected, 160, 50);
-    g_signal_connect(btn_edit_selected, "clicked", G_CALLBACK(on_edit_clicked), w);
-    gtk_box_append(GTK_BOX(action_box), btn_edit_selected);
-
-    GtkWidget *btn_delete = gtk_button_new_with_label("XÓA MỤC ĐÃ CHỌN");
-    gtk_widget_set_size_request(btn_delete, 160, 50);
-    g_signal_connect(btn_delete, "clicked", G_CALLBACK(on_delete_clicked), w);
-    gtk_box_append(GTK_BOX(action_box), btn_delete);
-
-    GtkWidget *btn_reset = gtk_button_new_with_label("RESET MÀN HÌNH");
-    gtk_widget_set_size_request(btn_reset, 160, 50);
-    g_signal_connect(btn_reset, "clicked", G_CALLBACK(on_reset_delete_view), w);
-    gtk_box_append(GTK_BOX(action_box), btn_reset);
-
-    gtk_box_append(GTK_BOX(vbox), action_box);
-
-    // Back button
-    GtkWidget *btn_back = gtk_button_new_with_label("Quay lại Menu");
-    g_signal_connect(btn_back, "clicked", G_CALLBACK(on_back_clicked), w);
-    gtk_widget_set_halign(btn_back, GTK_ALIGN_CENTER);
-    gtk_widget_set_margin_top(btn_back, 10);
-    gtk_widget_add_css_class(btn_back, "back-button");
-    gtk_box_append(GTK_BOX(vbox), btn_back);
 
     return vbox;
 }
@@ -1606,7 +2087,8 @@ void refresh_sort_list(SinhvienWidgets *app) {
 
     if (slsv == 0) {
         GtkWidget *row = create_student_card_box(10);
-        GtkWidget *lbl = gtk_label_new("❌ Danh sách sinh viên đang trống!");
+        GtkWidget *lbl = gtk_label_new(NULL);
+        gtk_label_set_markup(GTK_LABEL(lbl), "<span size='large' weight='bold' color='#ff0000'>❌ Danh sách sinh viên đang trống!</span>");
         gtk_box_append(GTK_BOX(row), lbl);
         gtk_flow_box_insert(GTK_FLOW_BOX(app->sortListBox), row, -1);
         return;
@@ -1625,7 +2107,7 @@ void refresh_sort_list(SinhvienWidgets *app) {
         } else {
             g_snprintf(mssv_text, sizeof(mssv_text), "MSSV: Chưa có");
         }
-        char *txt = g_strdup_printf("<b>%s</b>\n<span size='small' color='#666666'>%s | Lớp: %s | Ngày sinh: %d/%d/%d</span>", 
+        char *txt = g_strdup_printf("<b>%s</b>\n<span size='medium' color='#666666'>%s | Lớp: %s | Ngày sinh: %d/%d/%d</span>", 
                                     ArrSinhVien[i].Name, mssv_text, ArrSinhVien[i].Class, ArrSinhVien[i].NgaySinh.day, ArrSinhVien[i].NgaySinh.month, ArrSinhVien[i].NgaySinh.year);
         gtk_label_set_markup(GTK_LABEL(lbl), txt);
         gtk_label_set_xalign(GTK_LABEL(lbl), 0);
@@ -1648,7 +2130,8 @@ void refresh_cap_list(SinhvienWidgets *app) {
 
     if (slsv == 0) {
         GtkWidget *row = create_student_card_box(10);
-        GtkWidget *lbl = gtk_label_new("❌ Danh sách sinh viên đang trống!");
+        GtkWidget *lbl = gtk_label_new(NULL);
+        gtk_label_set_markup(GTK_LABEL(lbl), "<span size='large' weight='bold' color='#ff0000'>❌ Danh sách sinh viên đang trống!</span>");
         gtk_box_append(GTK_BOX(row), lbl);
         gtk_flow_box_insert(GTK_FLOW_BOX(app->capListBox), row, -1);
         return;
@@ -1662,7 +2145,7 @@ void refresh_cap_list(SinhvienWidgets *app) {
 
         GtkWidget *lbl = gtk_label_new(NULL);
         const char *status = ArrSinhVien[i].MaSV != 0 ? "✅ Đã cấp MSSV" : "○ Chưa cấp MSSV";
-        char *txt = g_strdup_printf("<b>%s</b>\n<span size='small' color='#666666'>MSSV: %s | Lớp: %s</span>", 
+        char *txt = g_strdup_printf("<b>%s</b>\n<span size='medium' color='#666666'>MSSV: %s | Lớp: %s</span>", 
                                     ArrSinhVien[i].Name, status, ArrSinhVien[i].Class);
         gtk_label_set_markup(GTK_LABEL(lbl), txt);
         gtk_label_set_xalign(GTK_LABEL(lbl), 0);
@@ -1685,7 +2168,8 @@ void refresh_cap_email_list(SinhvienWidgets *app) {
 
     if (slsv == 0) {
         GtkWidget *row = create_student_card_box(10);
-        GtkWidget *lbl = gtk_label_new("❌ Danh sách sinh viên đang trống!");
+        GtkWidget *lbl = gtk_label_new(NULL);
+        gtk_label_set_markup(GTK_LABEL(lbl), "<span size='large' weight='bold' color='#ff0000'>❌ Danh sách sinh viên đang trống!</span>");
         gtk_box_append(GTK_BOX(row), lbl);
         gtk_flow_box_insert(GTK_FLOW_BOX(app->capEmailListBox), row, -1);
         return;
@@ -1699,7 +2183,7 @@ void refresh_cap_email_list(SinhvienWidgets *app) {
 
         GtkWidget *lbl = gtk_label_new(NULL);
         const char *email_status = strcmp(ArrSinhVien[i].Email, "Chưa có") != 0 ? "✓ Đã cấp Email" : "○ Chưa cấp Email";
-        char *txt = g_strdup_printf("<b>%s</b>\n<span size='small' color='#666666'>MSSV: %lld | Năm sinh: %d | Email: %s</span>", 
+        char *txt = g_strdup_printf("<b>%s</b>\n<span size='medium' color='#666666'>MSSV: %lld | Năm sinh: %d | Email: %s</span>", 
                                     ArrSinhVien[i].Name, ArrSinhVien[i].MaSV, ArrSinhVien[i].NgaySinh.year, email_status);
         gtk_label_set_markup(GTK_LABEL(lbl), txt);
         gtk_label_set_xalign(GTK_LABEL(lbl), 0);
@@ -1825,7 +2309,7 @@ void on_cap_email_clicked(GtkWidget *widget, gpointer data) {
 }
 
 GtkWidget* create_sort_sv_ui(SinhvienWidgets *w) {
-    GtkWidget *vbox = gtk_box_new(GTK_ORIENTATION_VERTICAL, 15);
+    GtkWidget *vbox = gtk_box_new(GTK_ORIENTATION_VERTICAL, 5);
     set_margin_all(vbox, 20);
 
     // Icon + Header
@@ -1843,30 +2327,59 @@ GtkWidget* create_sort_sv_ui(SinhvienWidgets *w) {
 
     // Instructions
     GtkWidget *instr = gtk_label_new(NULL);
-    gtk_label_set_markup(GTK_LABEL(instr), "<span size='small' weight='bold' color='#15ff00'>Chọn tiêu chí để sắp xếp danh sách. Chỉ Sắp xếp theo Tên sẽ thay đổi biến DaSapXep.</span>");
+    gtk_label_set_markup(GTK_LABEL(instr), "<span size='x-large' weight='bold' color='#fffb00'>Sắp xếp danh sách theo tiêu chí được chọn.</span>");
     gtk_label_set_xalign(GTK_LABEL(instr), 0.5);
     gtk_box_append(GTK_BOX(vbox), instr);
-
+    
     // Sort criteria selector
     GtkWidget *criteria_box = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 12);
     gtk_widget_set_margin_top(criteria_box, 10);
     gtk_widget_set_margin_bottom(criteria_box, 6);
     gtk_widget_set_hexpand(criteria_box, TRUE);
 
+    // Back button
+    GtkWidget *btn_back = gtk_button_new_with_label("◀ Quay lại Menu");
+    gtk_widget_add_css_class(btn_back, "label-btn");
+    gtk_widget_add_css_class(btn_back, "border-label");
+    gtk_widget_set_size_request(btn_back, 250, 50);
+    gtk_widget_set_margin_top(btn_back, 10);
+    g_signal_connect(btn_back, "clicked", G_CALLBACK(on_back_clicked), w);
+    gtk_widget_add_css_class(btn_back, "back-button");
+    gtk_box_append(GTK_BOX(criteria_box), btn_back);
+
+    // spacer_fill
+    GtkWidget *spacer1 = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 0);
+    gtk_widget_set_hexpand(spacer1, TRUE);
+    gtk_box_append(GTK_BOX(criteria_box), spacer1);
+
     GtkWidget *criteria_label = gtk_label_new(NULL);
-    gtk_label_set_markup(GTK_LABEL(criteria_label), "<span weight='bold' size='small' color='#FFFFFF'>Tiêu chí sắp xếp:</span>");
+    gtk_label_set_markup(GTK_LABEL(criteria_label), "<span weight='bold' size='large' color='#000000'>Tiêu chí sắp xếp:</span>");
     gtk_widget_set_halign(criteria_label, GTK_ALIGN_CENTER);
     gtk_box_append(GTK_BOX(criteria_box), criteria_label);
 
     w->sortCriteriaDropDown = gtk_drop_down_new_from_strings((const char * const[]){"Theo lớp", "Theo ngày sinh", "Theo MSSV", "Theo tên", NULL});
     gtk_widget_set_hexpand(w->sortCriteriaDropDown, FALSE);
-    gtk_widget_set_size_request(w->sortCriteriaDropDown, 100, 40);
+    gtk_widget_set_size_request(w->sortCriteriaDropDown, 180, 50);
     gtk_box_append(GTK_BOX(criteria_box), w->sortCriteriaDropDown);
+
+    GtkWidget *spacer2 = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 0);
+    gtk_widget_set_hexpand(spacer2, TRUE);
+    gtk_box_append(GTK_BOX(criteria_box), spacer2);
+
+    // Sort button
+    GtkWidget *btn_sort = gtk_button_new_with_label("SẮP XẾP");
+    gtk_widget_add_css_class(btn_sort, "label-btn");
+    gtk_widget_add_css_class(btn_sort, "border-label");
+    gtk_widget_set_size_request(btn_sort, 250, 50);
+    gtk_widget_set_margin_top(btn_sort, 10);
+    g_signal_connect(btn_sort, "clicked", G_CALLBACK(on_sort_clicked), w);
+    gtk_box_append(GTK_BOX(criteria_box), btn_sort);
+
     gtk_box_append(GTK_BOX(vbox), criteria_box);
 
     // Student list
     GtkWidget *list_label = gtk_label_new(NULL);
-    gtk_label_set_markup(GTK_LABEL(list_label), "<span size='small' weight='bold' color='white'>Danh sách sinh viên hiện tại:</span>");
+    gtk_label_set_markup(GTK_LABEL(list_label), "<span size='large' weight='bold' color='black'>Danh sách sinh viên hiện tại:</span>");
     gtk_label_set_xalign(GTK_LABEL(list_label), 0);
     gtk_widget_set_margin_top(list_label, 15);
     gtk_box_append(GTK_BOX(vbox), list_label);
@@ -1891,22 +2404,6 @@ GtkWidget* create_sort_sv_ui(SinhvienWidgets *w) {
     gtk_widget_set_margin_top(w->sortMsg, 10);
     gtk_box_append(GTK_BOX(vbox), w->sortMsg);
 
-    // Sort button
-    GtkWidget *btn_sort = gtk_button_new_with_label("SẮP XẾP");
-    gtk_widget_set_size_request(btn_sort, -1, 50);
-    gtk_widget_set_margin_top(btn_sort, 10);
-    gtk_widget_set_halign(btn_sort, GTK_ALIGN_CENTER);
-    g_signal_connect(btn_sort, "clicked", G_CALLBACK(on_sort_clicked), w);
-    gtk_box_append(GTK_BOX(vbox), btn_sort);
-
-    // Back button
-    GtkWidget *btn_back = gtk_button_new_with_label("Quay lại Menu");
-    g_signal_connect(btn_back, "clicked", G_CALLBACK(on_back_clicked), w);
-    gtk_widget_set_halign(btn_back, GTK_ALIGN_CENTER);
-    gtk_widget_set_margin_top(btn_back, 10);
-    gtk_widget_add_css_class(btn_back, "back-button");
-    gtk_box_append(GTK_BOX(vbox), btn_back);
-
     return vbox;
 }
 
@@ -1929,13 +2426,43 @@ GtkWidget* create_cap_mssv_ui(SinhvienWidgets *w) {
 
     // Instructions
     GtkWidget *instr = gtk_label_new(NULL);
-    gtk_label_set_markup(GTK_LABEL(instr), "<span size='small' weight='bold' color='#15ff00'>Chỉ cấp MSSV khi đã sắp xếp danh sách theo Tên\nMSSV = Mã Khoa + 2 số năm học + Số thứ tự trong khoa</span>");
+    gtk_label_set_markup(GTK_LABEL(instr), "<span size='x-large' weight='bold' color='#fffb00'>Chỉ cấp MSSV khi đã sắp xếp danh sách theo Tên\nMSSV = Mã Khoa + 2 số năm học + Số thứ tự trong khoa</span>");
     gtk_label_set_xalign(GTK_LABEL(instr), 0.5);
     gtk_box_append(GTK_BOX(vbox), instr);
 
+    // ======================= Function box
+    GtkWidget *func_box = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 12);
+    gtk_widget_set_margin_top(func_box, 10);
+    // Back button
+    GtkWidget *btn_back = gtk_button_new_with_label("◀ Quay lại Menu");
+    gtk_widget_add_css_class(btn_back, "label-btn");
+    gtk_widget_add_css_class(btn_back, "border-label");
+    gtk_widget_set_size_request(btn_back, 250, 50);
+    g_signal_connect(btn_back, "clicked", G_CALLBACK(on_back_clicked), w);
+    gtk_widget_set_halign(btn_back, GTK_ALIGN_CENTER);
+    gtk_widget_set_margin_top(btn_back, 10);
+    gtk_box_append(GTK_BOX(func_box), btn_back);
+
+    GtkWidget *spacer = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 0);
+    gtk_widget_set_hexpand(spacer, TRUE);
+    gtk_box_append(GTK_BOX(func_box), spacer);
+
+    // Cap MSSV button
+    GtkWidget *btn_cap = gtk_button_new_with_label("CẤP MSSV");
+    gtk_widget_add_css_class(btn_cap, "label-btn");
+    gtk_widget_add_css_class(btn_cap, "border-label");
+    gtk_widget_set_size_request(btn_cap, 250, 50);
+    gtk_widget_set_margin_top(btn_cap, 10);
+    gtk_widget_set_halign(btn_cap, GTK_ALIGN_CENTER);
+    g_signal_connect(btn_cap, "clicked", G_CALLBACK(on_cap_mssv_clicked), w);
+    gtk_box_append(GTK_BOX(func_box), btn_cap);
+
+    gtk_box_append(GTK_BOX(vbox), func_box);
+    // =======================
+
     // Student list
     GtkWidget *list_label = gtk_label_new(NULL);
-    gtk_label_set_markup(GTK_LABEL(list_label), "<span size='small' weight='bold' color='white'>Danh sách sinh viên hiện tại:</span>");
+    gtk_label_set_markup(GTK_LABEL(list_label), "<span size='large' weight='bold' color='black'>Danh sách sinh viên hiện tại:</span>");
     gtk_label_set_xalign(GTK_LABEL(list_label), 0);
     gtk_widget_set_margin_top(list_label, 15);
     gtk_box_append(GTK_BOX(vbox), list_label);
@@ -1961,21 +2488,6 @@ GtkWidget* create_cap_mssv_ui(SinhvienWidgets *w) {
     gtk_widget_set_margin_top(w->capMsg, 10);
     gtk_box_append(GTK_BOX(vbox), w->capMsg);
 
-    // Cap MSSV button
-    GtkWidget *btn_cap = gtk_button_new_with_label("CẤP MSSV");
-    gtk_widget_set_size_request(btn_cap, -1, 50);
-    gtk_widget_set_margin_top(btn_cap, 10);
-    gtk_widget_set_halign(btn_cap, GTK_ALIGN_CENTER);
-    g_signal_connect(btn_cap, "clicked", G_CALLBACK(on_cap_mssv_clicked), w);
-    gtk_box_append(GTK_BOX(vbox), btn_cap);
-
-    // Back button
-    GtkWidget *btn_back = gtk_button_new_with_label("Quay lại Menu");
-    g_signal_connect(btn_back, "clicked", G_CALLBACK(on_back_clicked), w);
-    gtk_widget_set_halign(btn_back, GTK_ALIGN_CENTER);
-    gtk_widget_set_margin_top(btn_back, 10);
-    gtk_box_append(GTK_BOX(vbox), btn_back);
-
     return vbox;
 }
 
@@ -1998,13 +2510,43 @@ GtkWidget* create_cap_email_ui(SinhvienWidgets *w) {
 
     // Instructions
     GtkWidget *instr = gtk_label_new(NULL);
-    gtk_label_set_markup(GTK_LABEL(instr), "<span size='small' weight='bold' color='#15ff00'>Chỉ cấp Email khi đã có MSSV\nEmail = tên.chữlót + MSSV@utc.edu.vn</span>");
+    gtk_label_set_markup(GTK_LABEL(instr), "<span size='x-large' weight='bold' color='#fffb00'>Chỉ cấp Email khi đã có MSSV\nEmail = MSSV@dut.udn.vn</span>");
     gtk_label_set_xalign(GTK_LABEL(instr), 0.5);
     gtk_box_append(GTK_BOX(vbox), instr);
 
+    // ======================= Function box
+    GtkWidget *func_box = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 12);
+    gtk_widget_set_margin_top(func_box, 10);
+    // Back button
+    GtkWidget *btn_back = gtk_button_new_with_label("◀ Quay lại Menu");
+    gtk_widget_add_css_class(btn_back, "label-btn");
+    gtk_widget_add_css_class(btn_back, "border-label");
+    gtk_widget_set_size_request(btn_back, 250, 50);
+    g_signal_connect(btn_back, "clicked", G_CALLBACK(on_back_clicked), w);
+    gtk_widget_set_halign(btn_back, GTK_ALIGN_CENTER);
+    gtk_widget_set_margin_top(btn_back, 10);
+    gtk_box_append(GTK_BOX(func_box), btn_back);
+
+    GtkWidget *spacer = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 0);
+    gtk_widget_set_hexpand(spacer, TRUE);
+    gtk_box_append(GTK_BOX(func_box), spacer);
+
+    // Cap Email button
+    GtkWidget *btn_cap = gtk_button_new_with_label("CẤP EMAIL");
+    gtk_widget_add_css_class(btn_cap, "label-btn");
+    gtk_widget_add_css_class(btn_cap, "border-label");
+    gtk_widget_set_size_request(btn_cap, 250, 50);
+    gtk_widget_set_margin_top(btn_cap, 10);
+    gtk_widget_set_halign(btn_cap, GTK_ALIGN_CENTER);
+    g_signal_connect(btn_cap, "clicked", G_CALLBACK(on_cap_email_clicked), w);
+    gtk_box_append(GTK_BOX(func_box), btn_cap);
+
+    gtk_box_append(GTK_BOX(vbox), func_box);
+    // =======================
+
     // Student list
     GtkWidget *list_label = gtk_label_new(NULL);
-    gtk_label_set_markup(GTK_LABEL(list_label), "<span size='small' weight='bold' color='white'>Danh sách sinh viên hiện tại:</span>");
+    gtk_label_set_markup(GTK_LABEL(list_label), "<span size='large' weight='bold' color='black'>Danh sách sinh viên hiện tại:</span>");
     gtk_label_set_xalign(GTK_LABEL(list_label), 0);
     gtk_widget_set_margin_top(list_label, 15);
     gtk_box_append(GTK_BOX(vbox), list_label);
@@ -2029,21 +2571,6 @@ GtkWidget* create_cap_email_ui(SinhvienWidgets *w) {
     w->capEmailMsg = gtk_label_new("");
     gtk_widget_set_margin_top(w->capEmailMsg, 10);
     gtk_box_append(GTK_BOX(vbox), w->capEmailMsg);
-
-    // Cap Email button
-    GtkWidget *btn_cap = gtk_button_new_with_label("CẤP EMAIL");
-    gtk_widget_set_size_request(btn_cap, -1, 50);
-    gtk_widget_set_margin_top(btn_cap, 10);
-    gtk_widget_set_halign(btn_cap, GTK_ALIGN_CENTER);
-    g_signal_connect(btn_cap, "clicked", G_CALLBACK(on_cap_email_clicked), w);
-    gtk_box_append(GTK_BOX(vbox), btn_cap);
-
-    // Back button
-    GtkWidget *btn_back = gtk_button_new_with_label("Quay lại Menu");
-    g_signal_connect(btn_back, "clicked", G_CALLBACK(on_back_clicked), w);
-    gtk_widget_set_halign(btn_back, GTK_ALIGN_CENTER);
-    gtk_widget_set_margin_top(btn_back, 10);
-    gtk_box_append(GTK_BOX(vbox), btn_back);
 
     return vbox;
 }
@@ -2081,6 +2608,19 @@ GtkWidget* create_menu_ui(SinhvienWidgets *widgets) {
     GtkWidget *btn_cap_mssv = gtk_button_new_with_label("🆔 Cấp MSSV Tự Động Cho Sinh Viên");
     GtkWidget *btn_cap_email = gtk_button_new_with_label("📧 Cấp Email Tự Động Cho Sinh Viên");
     
+    gtk_widget_add_css_class(btn_add, "label-btn");
+    gtk_widget_add_css_class(btn_add, "border-label");
+    gtk_widget_add_css_class(btn_list, "label-btn");
+    gtk_widget_add_css_class(btn_list, "border-label");
+    gtk_widget_add_css_class(btn_delete, "label-btn");
+    gtk_widget_add_css_class(btn_delete, "border-label");
+    gtk_widget_add_css_class(btn_sort, "label-btn");
+    gtk_widget_add_css_class(btn_sort, "border-label");
+    gtk_widget_add_css_class(btn_cap_mssv, "label-btn");
+    gtk_widget_add_css_class(btn_cap_mssv, "border-label");
+    gtk_widget_add_css_class(btn_cap_email, "label-btn");
+    gtk_widget_add_css_class(btn_cap_email, "border-label");
+
     gtk_widget_set_size_request(btn_add, 250, 50);
     gtk_widget_set_size_request(btn_list, 250, 50);
     // gtk_widget_set_size_request(btn_search, 250, 50);
@@ -2090,6 +2630,8 @@ GtkWidget* create_menu_ui(SinhvienWidgets *widgets) {
     gtk_widget_set_size_request(btn_cap_email, 250, 50);
 
     GtkWidget *btn_back_to_file = gtk_button_new_with_label("🔙 Quay lại Chọn File");
+    gtk_widget_add_css_class(btn_back_to_file, "label-btn");
+    gtk_widget_add_css_class(btn_back_to_file, "border-label");
     gtk_widget_set_size_request(btn_back_to_file, 250, 50);
 
     g_signal_connect(btn_add, "clicked", G_CALLBACK(on_go_add), widgets);
@@ -2121,7 +2663,7 @@ GtkWidget* create_menu_ui(SinhvienWidgets *widgets) {
 
     GtkWidget *menu_title = gtk_label_new(NULL);
     gtk_label_set_markup(GTK_LABEL(menu_title),
-        "<span size='xx-large' weight='bold'>QUẢN LÝ SINH VIÊN</span>");
+        "<span size='xx-large' weight='bold' foreground = '#263238'>QUẢN LÝ SINH VIÊN</span>");
     gtk_box_append(GTK_BOX(menu_header), menu_title);
     gtk_box_append(GTK_BOX(vbox), menu_header);
 
@@ -2129,14 +2671,16 @@ GtkWidget* create_menu_ui(SinhvienWidgets *widgets) {
     // Chuyển top_label xuống sau menu_header để đúng thứ tự: icon → tiêu đề → tác giả
     GtkWidget *top_label = gtk_label_new(NULL);
     gtk_label_set_markup(GTK_LABEL(top_label),
-        "<span font_desc='Sans 14' weight='bold'>🏫 ĐỒ ÁN LẬP TRÌNH TÍNH TOÁN\n"
-        "<span size='small' weight='normal'>Thực hiện bởi: Trần Khánh Duy &amp; Lã Trung Thực</span></span>");
+        "<span font_desc='Sans 14' weight='bold' foreground = '#263238'>🏫 ĐỒ ÁN LẬP TRÌNH TÍNH TOÁN\n"
+        "<span size='large' weight='normal' foreground = '#424242'>Thực hiện bởi: Trần Khánh Duy &amp; Lã Trung Thực</span></span>");
+    
+    gtk_label_set_justify(GTK_LABEL(top_label), GTK_JUSTIFY_CENTER);
     gtk_label_set_xalign(GTK_LABEL(top_label), 0.5);
     gtk_widget_set_margin_bottom(top_label, 15);
     gtk_box_append(GTK_BOX(vbox), top_label);
 
     GtkWidget *menu_subtitle = gtk_label_new(NULL);
-    gtk_label_set_markup(GTK_LABEL(menu_subtitle), "<span size='small' weight='bold' color='#15ff00'>Quản lý học viên, MSSV, email và lớp.</span>");
+    gtk_label_set_markup(GTK_LABEL(menu_subtitle), "<span size = 'x-large' weight='bold' foreground='#fffb00'>Quản lý học viên toàn trường - từng lớp.</span>");
     gtk_widget_set_halign(menu_subtitle, GTK_ALIGN_CENTER);
     gtk_widget_set_margin_bottom(menu_subtitle, 20);
     gtk_box_append(GTK_BOX(vbox), menu_subtitle);
@@ -2186,7 +2730,7 @@ static void activate(GtkApplication *app, gpointer user_data) {
         "  padding: 16px;"
         "  box-shadow: 0 5px 18px rgba(0,0,0,0.08);"
         "}"
-        
+
         "flowboxchild:selected, "
         "flowboxchild:selected * {"
         "  color: #2c3e50 !important;" 
@@ -2219,8 +2763,33 @@ static void activate(GtkApplication *app, gpointer user_data) {
         "  border-radius: 6px;"
         "  border: 1px solid rgba(0,0,0,0.08);"
         "}"
+
         ".back-button:hover {"
         "  background-color: #f6f6f6;"
+        "}"
+        ".label-btn label {"
+        "   font-size: 20px;"
+        "   font-weight: bold;"
+        "}"
+
+        ".border-label {"
+        "   border: 2px solid black;"
+        "   border-radius: 6px;"
+        "   padding: 6px;"
+        "}"
+        
+        ".readonly-entry {"
+        "   background-color: #f0f0f0;"
+        "   color: #666;"
+        "}"
+        
+        "* {"
+        "   font-size:16px;"
+        "}"
+        
+        ".preview-text {"
+        "   font-family: Consolas;"
+        "   font-size: 14px;"
         "}"
     );
 
@@ -2247,6 +2816,7 @@ static void activate(GtkApplication *app, gpointer user_data) {
     gtk_stack_add_named(GTK_STACK(widgets->stack), create_sort_sv_ui(widgets), "sort");
     gtk_stack_add_named(GTK_STACK(widgets->stack), create_cap_mssv_ui(widgets), "cap_mssv");
     gtk_stack_add_named(GTK_STACK(widgets->stack), create_cap_email_ui(widgets), "cap_email");
+    gtk_stack_add_named(GTK_STACK(widgets->stack), create_preview_ui(widgets), "preview");
 
     GtkWidget *scroll = gtk_scrolled_window_new();
 

@@ -54,6 +54,7 @@ void save_last_filename();
 const char* layTen(const char* hoTen); // lấy tên trong string họ và tên
 int checkDate(int day, int month, int year); // check input ngày sinh
 int checkClass(char* s); // check input Khóa
+int is_all_digits(const char *s); // kiểm tra xem string chỉ chứa ký tự số hay không
 int SoSanhTenViet(const char *name1, const char *name2); // so sánh tên theo tiếng Việt
 void CapMaSoSinhVien(struct SinhVien ArrSinhVien[], int slsv); // cấp mã số sinh viên
 void CapEmailSinhVien(struct SinhVien ArrSinhVien[], int slsv); // cấp email sinh viên

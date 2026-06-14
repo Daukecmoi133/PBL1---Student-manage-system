@@ -27,6 +27,7 @@ void load_last_filename() {
     if (strlen(CurrentFileName) == 0) {
         strcpy(CurrentFileName, "sinhvien.txt");
     }
+    printf("File da load: %s", CurrentFileName);
 }
 
 void setColor(int color) {
@@ -140,7 +141,7 @@ int layMaKhoaTuLop(const char *className)
     if (*rest == '\0') return 0;
 
     if (class_prefix_matches(rest, "C1") || class_prefix_matches(rest, "CKHK") || class_prefix_matches(rest, "CDT")) return 101;
-    if (class_prefix_matches(rest, "T_DT") || class_prefix_matches(rest, "KHDL") || class_prefix_matches(rest, "NHAT")) return 102;
+    if (class_prefix_matches(rest, "T_DT") || class_prefix_matches(rest, "T_KHDL") || class_prefix_matches(rest, "T_NHAT")) return 102;
     if (class_prefix_matches(rest, "C4") || class_prefix_matches(rest, "KTOTO") || class_prefix_matches(rest, "KTTT") || class_prefix_matches(rest, "HTCN")) return 103;
     if (class_prefix_matches(rest, "N") || class_prefix_matches(rest, "QLNL")) return 104;
     if (class_prefix_matches(rest, "D") || class_prefix_matches(rest, "TDH")) return 105;
@@ -204,6 +205,15 @@ int count_students_in_class(const struct SinhVien ArrSinhVien[], int slsv, const
         }
     }
     return count;
+}
+int is_all_digits(const char *s) {
+    if (s == NULL || *s == '\0')
+        return 0;
+        
+    for (const char *p = s; *p; p++) {
+        if (!isdigit((unsigned char)*p)) return 0;
+    }
+    return 1;
 }
 
 void build_class_limit_message(const struct SinhVien ArrSinhVien[], int slsv, const char *className, char *out_msg, size_t out_len)
@@ -301,19 +311,41 @@ int export_student_list_to_file(const char *filename, const char *classFilter, c
             *p = toupper((unsigned char)*p);
         }
     }
+    int count = 0;
+    for (int i = 0; i < slsv; i++) {
+        if (strlen(filter) > 0 && strcmp(ArrSinhVien[i].Class, filter) != 0) continue;
+        count++;
+    }
+
+    if (strlen(filter) == 0)
+        fprintf(f, "Tổng số sinh viên trong file %d là: %d\n", CurrentFileName, slsv);
+    else
+        fprintf(f, "Tổng số sinh viên trong lớp %s là %d\n", filter, count);
 
     for (int i = 0; i < slsv; i++) {
         if (strlen(filter) > 0 && strcmp(ArrSinhVien[i].Class, filter) != 0) continue;
-        fprintf(f, "%lld|%s|%s|%02d/%02d/%04d|%s|%s|%s\n",
-                ArrSinhVien[i].MaSV,
-                ArrSinhVien[i].Name,
-                ArrSinhVien[i].Class,
-                ArrSinhVien[i].NgaySinh.day,
-                ArrSinhVien[i].NgaySinh.month,
-                ArrSinhVien[i].NgaySinh.year,
-                ArrSinhVien[i].Gender,
-                ArrSinhVien[i].Address,
-                ArrSinhVien[i].Email);
+        fprintf(f, 
+            "====================================================\n"
+            "MSSV      : %lld\n"
+            "Họ tên    : %s\n"
+            "Lớp       : %s\n"
+            "Giới tính : %s\n"
+            "Ngày sinh : %02d/%02d/%04d\n"
+            "Email     : %s\n"
+            "Địa chỉ   : %s\n",
+
+            ArrSinhVien[i].MaSV,
+            ArrSinhVien[i].Name,
+            ArrSinhVien[i].Class,
+            ArrSinhVien[i].Gender,
+
+            ArrSinhVien[i].NgaySinh.day,
+            ArrSinhVien[i].NgaySinh.month,
+            ArrSinhVien[i].NgaySinh.year,
+
+            ArrSinhVien[i].Email,
+            ArrSinhVien[i].Address
+        );
         exported++;
     }
 
